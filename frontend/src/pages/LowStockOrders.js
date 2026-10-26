@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import api from '../services/api';
 import { 
   Package, 
   CheckSquare, 
@@ -38,7 +39,7 @@ const LowStockOrders = () => {
   useEffect(() => {
     const fetchSuppliers = async () => {
       try {
-        const response = await axios.get('/api/proveedores');
+        const response = await api.get('/proveedores');
         if (response.data.success) {
           setSuppliers(response.data.data);
         }
@@ -52,7 +53,7 @@ const LowStockOrders = () => {
   // Fetch suppliers for autocomplete
   const fetchSuppliersForAutocomplete = async (searchQuery) => {
     try {
-      const response = await axios.get('/api/proveedores', { params: { search: searchQuery, limit: 1000 } });
+      const response = await api.get('/proveedores', { params: { search: searchQuery, limit: 1000 } });
       if (response.data.success) {
         return response.data.data;
       }
@@ -69,15 +70,15 @@ const LowStockOrders = () => {
       try {
         setLoading(true);
         const params = selectedSupplier !== 'all' ? { supplierId: selectedSupplier } : {};
-        const response = await axios.get('/api/productos/low-stock', { params });
+        const response = await api.get('/productos/low-stock', { params });
         
         if (response.data.success) {
           const productsWithQuantities = response.data.data.map(product => {
             // Calcular cantidad sugerida con la regla correcta:
             // SI stockActual <= stockMinimo: cantidadAPedir = stockIdeal - stockActual
             // SI stockActual > stockMinimo: cantidadAPedir = 0
-            const suggestedQuantity = (product.stock <= product.minStock)
-              ? Math.max(0, (product.idealStock || product.minStock) - product.stock)
+            const suggestedQuantity = (product.stock <= (product.minStock || 5))
+              ? Math.max(0, (product.idealStock || product.minStock || 5) - product.stock)
               : 0;
             
             return {
@@ -173,7 +174,7 @@ const LowStockOrders = () => {
     }
 
     try {
-      const response = await axios.put(`/api/productos/${editingProduct._id}`, {
+      const response = await api.put(`/productos/${editingProduct._id}`, {
         minStock: editFormData.minStock,
         idealStock: editFormData.idealStock
       });
@@ -185,12 +186,12 @@ const LowStockOrders = () => {
         
         // Recargar productos para actualizar cálculos
         const params = selectedSupplier !== 'all' ? { supplierId: selectedSupplier } : {};
-        const productsResponse = await axios.get('/api/productos/low-stock', { params });
+        const productsResponse = await api.get('/productos/low-stock', { params });
         
         if (productsResponse.data.success) {
           const productsWithQuantities = productsResponse.data.data.map(product => {
-            const suggestedQuantity = (product.stock <= product.minStock)
-              ? Math.max(0, (product.idealStock || product.minStock) - product.stock)
+            const suggestedQuantity = (product.stock <= (product.minStock || 5))
+              ? Math.max(0, (product.idealStock || product.minStock || 5) - product.stock)
               : 0;
             
             return {

@@ -230,14 +230,15 @@ router.get('/', async (req, res) => {
 
 // @route   GET /api/productos/low-stock
 // @desc    Obtener productos con bajo stock con información de proveedor
-router.get('/low-stock', async (req, res) => {
+router.get('/low-stock', authenticateToken, async (req, res) => {
   try {
     const { supplierId } = req.query;
     
-    // Construir query base
+    // Construir query base - usar default minStock de 5 si no está definido
     let query = {
-      $expr: { $lte: ['$stock', '$minStock'] },
-      isDeleted: { $ne: true }
+      $expr: { $lte: ['$stock', { $ifNull: ['$minStock', 5] }] },
+      isDeleted: { $ne: true },
+      isActive: true
     };
     
     // Filtrar por proveedor si se especifica
@@ -260,10 +261,11 @@ router.get('/low-stock', async (req, res) => {
       data: productos
     });
   } catch (error) {
-    console.error(error);
+    console.error('Error en /api/productos/low-stock:', error);
     res.status(500).json({
       success: false,
-      message: 'Error al obtener productos con bajo stock'
+      message: 'Error al obtener productos con bajo stock',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
