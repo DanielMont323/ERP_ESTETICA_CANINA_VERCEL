@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/database');
-const path = require('path');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -33,7 +32,7 @@ connectDB();
 const app = express();
 
 // Middleware
-// CORS configuration for Zeabur and local development
+// CORS configuration for Vercel, Zeabur and local development
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -44,9 +43,8 @@ const corsOptions = {
       return callback(null, true);
     }
     
-    // In production, Zeabur services communicate via private networking
-    // Allow all origins in Zeabur environment (can be restricted further)
-    if (process.env.ZEABUR === 'true' || process.env.NODE_ENV === 'production') {
+    // In production, allow all origins (Vercel/Zeabur environment)
+    if (process.env.NODE_ENV === 'production') {
       return callback(null, true);
     }
     
@@ -56,9 +54,6 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 app.use(express.json());
-
-// Serve static files from frontend build directory
-app.use(express.static(path.join(__dirname, '../frontend/build')));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -95,20 +90,22 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler - serve React app for non-API routes
-app.get('*', (req, res) => {
-  if (!req.path.startsWith('/api')) {
-    res.sendFile(path.join(__dirname, '../frontend/build', 'index.html'));
-  } else {
-    res.status(404).json({ 
-      success: false, 
-      message: 'Ruta API no encontrada' 
-    });
-  }
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ 
+    success: false, 
+    message: 'Ruta API no encontrada' 
+  });
 });
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en puerto ${PORT}`);
-});
+// Only start the server if not running in Vercel environment
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Servidor corriendo en puerto ${PORT}`);
+  });
+}
+
+// Export for Vercel
+module.exports = app;
