@@ -492,6 +492,95 @@ router.get('/expenses-detail', async (req, res) => {
   }
 });
 
+// @route   GET /api/reports/sales-detail
+// @desc    Detalle de ventas por período
+router.get('/sales-detail', async (req, res) => {
+  try {
+    const { period, startDate, endDate } = req.query;
+    
+    let dateFilter = {};
+    
+    // Filtros de periodo predefinidos usando GMT-7 (misma lógica que expenses-detail)
+    const todayGMT7 = startOfDayGMT7(new Date());
+    
+    if (period === 'day' || period === 'today') {
+      const endOfToday = endOfDayGMT7(new Date());
+      dateFilter = {
+        date: { $gte: todayGMT7, $lte: endOfToday }
+      };
+    } else if (period === 'week') {
+      const startOfWeek = new Date(todayGMT7);
+      startOfWeek.setDate(todayGMT7.getDate() - todayGMT7.getDay());
+      const startOfWeekGMT7 = startOfDayGMT7(startOfWeek);
+      const endOfWeek = new Date(startOfWeekGMT7);
+      endOfWeek.setDate(startOfWeekGMT7.getDate() + 6);
+      const endOfWeekGMT7 = endOfDayGMT7(endOfWeek);
+      dateFilter = {
+        date: { $gte: startOfWeekGMT7, $lte: endOfWeekGMT7 }
+      };
+    } else if (period === 'month') {
+      const startOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth(), 1);
+      const startOfMonthGMT7 = startOfDayGMT7(startOfMonth);
+      const endOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth() + 1, 0);
+      const endOfMonthGMT7 = endOfDayGMT7(endOfMonth);
+      dateFilter = {
+        date: { $gte: startOfMonthGMT7, $lte: endOfMonthGMT7 }
+      };
+    } else if (period === 'year') {
+      const startOfYear = new Date(todayGMT7.getFullYear(), 0, 1);
+      const startOfYearGMT7 = startOfDayGMT7(startOfYear);
+      const endOfYear = new Date(todayGMT7.getFullYear(), 11, 31);
+      const endOfYearGMT7 = endOfDayGMT7(endOfYear);
+      dateFilter = {
+        date: { $gte: startOfYearGMT7, $lte: endOfYearGMT7 }
+      };
+    } else if (startDate && endDate) {
+      // Usar funciones de calendario para evitar desfase de zona horaria
+      const startCalendar = createCalendarDate(startDate);
+      const endCalendar = createCalendarDate(endDate);
+      // Para el filtro: inicio del día inicial (00:00 GMT-7) hasta fin del día final (23:59:59.999 GMT-7)
+      const startGMT7 = startOfDayGMT7FromCalendar(startCalendar);
+      const endGMT7 = endOfDayGMT7FromCalendar(endCalendar);
+      dateFilter = {
+        date: { $gte: startGMT7, $lte: endGMT7 }
+      };
+    }
+
+    // Obtener ventas del período con populates
+    const ventas = await Venta.find({
+      ...dateFilter,
+      status: 'completada'
+    })
+      .populate('customer', 'name phone email')
+      .populate('mascota', 'name')
+      .sort({ date: -1 });
+
+    // Calcular totales para verificación
+    const totalVentas = ventas.reduce((sum, venta) => sum + (venta.total || 0), 0);
+    const totalNetIncome = ventas.reduce((sum, venta) => sum + (venta.netIncome || 0), 0);
+
+    res.json({
+      success: true,
+      data: {
+        period: { startDate, endDate },
+        sales: ventas,
+        summary: {
+          count: ventas.length,
+          totalVentas,
+          totalNetIncome
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error en /api/reports/sales-detail:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener detalle de ventas',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 // @route   GET /api/reports/sales-summary
 // @desc    Resumen de ventas
 router.get('/sales-summary', async (req, res) => {

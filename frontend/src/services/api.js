@@ -230,6 +230,7 @@ export const reportsAPI = {
   getCustomers: (params) => api.get('/reports/customers', { params }),
   getDashboard: () => api.get('/reports/dashboard'),
   getExpensesDetail: (params) => api.get('/reports/expenses-detail', { params }),
+  getSalesDetail: (params) => api.get('/reports/sales-detail', { params }),
   exportSales: (params) => api.get('/reports/export-sales', { 
     params,
     responseType: 'blob'

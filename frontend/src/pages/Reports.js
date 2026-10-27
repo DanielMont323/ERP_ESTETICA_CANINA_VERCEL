@@ -19,6 +19,9 @@ const Reports = () => {
   const [showExpensesModal, setShowExpensesModal] = useState(false);
   const [expensesDetail, setExpensesDetail] = useState(null);
   const [loadingExpenses, setLoadingExpenses] = useState(false);
+  const [showSalesModal, setShowSalesModal] = useState(false);
+  const [salesDetail, setSalesDetail] = useState(null);
+  const [loadingSales, setLoadingSales] = useState(false);
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -129,16 +132,50 @@ const Reports = () => {
     setExpensesDetail(null);
   };
 
+  const handleSalesClick = async () => {
+    setShowSalesModal(true);
+    setLoadingSales(true);
+    setSalesDetail(null);
+    
+    try {
+      const params = {};
+      if (dateRange.useRange) {
+        if (dateRange.startDate) params.startDate = dateRange.startDate;
+        if (dateRange.endDate) params.endDate = dateRange.endDate;
+      } else {
+        params.period = selectedPeriod;
+      }
+      
+      console.log('Parámetros enviados a sales-detail:', params);
+      const response = await reportsAPI.getSalesDetail(params);
+      console.log('Respuesta de sales-detail:', response.data);
+      setSalesDetail(response.data.data);
+    } catch (error) {
+      toast.error('Error al cargar detalle de ventas');
+      console.error('Error al cargar ventas:', error);
+    } finally {
+      setLoadingSales(false);
+    }
+  };
+
+  const handleSalesModalClose = () => {
+    setShowSalesModal(false);
+    setSalesDetail(null);
+  };
+
   useEffect(() => {
     const handleEsc = (e) => {
       if (e.key === 'Escape' && showExpensesModal) {
         handleExpensesModalClose();
       }
+      if (e.key === 'Escape' && showSalesModal) {
+        handleSalesModalClose();
+      }
     };
 
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [showExpensesModal]);
+  }, [showExpensesModal, showSalesModal]);
 
   const handleExportExcel = async () => {
     try {
@@ -479,8 +516,8 @@ const Reports = () => {
                     ].map((entry, index) => (
                       <Cell 
                         key={`cell-${index}`} 
-                        cursor={entry.name === 'Gastos' ? 'pointer' : 'default'}
-                        onClick={entry.name === 'Gastos' ? handleExpensesClick : undefined}
+                        cursor={entry.name === 'Gastos' || entry.name === 'Ingresos' ? 'pointer' : 'default'}
+                        onClick={entry.name === 'Gastos' ? handleExpensesClick : entry.name === 'Ingresos' ? handleSalesClick : undefined}
                       />
                     ))}
                   </Bar>
@@ -828,6 +865,162 @@ const Reports = () => {
           <div className="px-4 py-3 sm:px-6 sm:py-4 border-t border-gray-200 dark:border-dark-border flex justify-end">
             <button 
               onClick={handleExpensesModalClose}
+              className="btn btn-secondary btn-md w-full sm:w-auto"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Modal de Detalle de Ventas */}
+    {showSalesModal && (
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4"
+        onClick={handleSalesModalClose}
+      >
+        <div 
+          className="bg-white dark:bg-dark-card rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 dark:border-dark-border flex justify-between items-center">
+            <h3 className="text-base sm:text-xl font-semibold text-gray-600 dark:text-dark-textSecondary">
+              Detalle de ingresos — {getPeriodDisplay()}
+            </h3>
+            <button 
+              onClick={handleSalesModalClose}
+              className="text-gray-500 hover:text-gray-700 dark:text-dark-textSecondary dark:hover:text-gray-300 p-1"
+            >
+              <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="p-4 sm:p-6 flex-1 overflow-auto">
+            {loadingSales ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-burgundy"></div>
+              </div>
+            ) : salesDetail && salesDetail.sales.length > 0 ? (
+              <>
+                <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-gray-50 dark:bg-dark-surface rounded-lg">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+                    <div>
+                      <p className="text-xs sm:text-sm text-gray-500 dark:text-dark-textSecondary">Total de ingresos</p>
+                      <p className="text-xl sm:text-2xl font-bold text-gray-600 dark:text-dark-textSecondary">
+                        {formatCurrency(salesDetail.summary.totalVentas)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs sm:text-sm text-gray-500 dark:text-dark-textSecondary">Ventas registradas</p>
+                      <p className="text-xl sm:text-2xl font-bold text-gray-600 dark:text-dark-textSecondary">
+                        {salesDetail.summary.count}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs sm:text-sm text-gray-500 dark:text-dark-textSecondary">Ingreso neto</p>
+                      <p className="text-lg sm:text-xl font-semibold text-gray-600 dark:text-dark-textSecondary">
+                        {formatCurrency(salesDetail.summary.totalNetIncome)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-dark-border">
+                    <thead className="bg-gray-50 dark:bg-dark-surface">
+                      <tr>
+                        <th className="px-3 py-2 sm:px-6 sm:py-3 text-left text-xs font-semibold text-gray-500 dark:text-dark-textSecondary uppercase tracking-wider whitespace-nowrap">
+                          Fecha
+                        </th>
+                        <th className="px-3 py-2 sm:px-6 sm:py-3 text-left text-xs font-semibold text-gray-500 dark:text-dark-textSecondary uppercase tracking-wider whitespace-nowrap">
+                          Folio
+                        </th>
+                        <th className="px-3 py-2 sm:px-6 sm:py-3 text-left text-xs font-semibold text-gray-500 dark:text-dark-textSecondary uppercase tracking-wider">
+                          Cliente
+                        </th>
+                        <th className="px-3 py-2 sm:px-6 sm:py-3 text-left text-xs font-semibold text-gray-500 dark:text-dark-textSecondary uppercase tracking-wider">
+                          Productos/Servicios
+                        </th>
+                        <th className="px-3 py-2 sm:px-6 sm:py-3 text-left text-xs font-semibold text-gray-500 dark:text-dark-textSecondary uppercase tracking-wider whitespace-nowrap">
+                          Método de pago
+                        </th>
+                        <th className="px-3 py-2 sm:px-6 sm:py-3 text-left text-xs font-semibold text-gray-500 dark:text-dark-textSecondary uppercase tracking-wider whitespace-nowrap">
+                          Canal
+                        </th>
+                        <th className="px-3 py-2 sm:px-6 sm:py-3 text-right text-xs font-semibold text-gray-500 dark:text-dark-textSecondary uppercase tracking-wider whitespace-nowrap">
+                          Total
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-dark-card divide-y divide-gray-200 dark:divide-dark-border">
+                      {salesDetail.sales.map((sale) => (
+                        <tr key={sale._id}>
+                          <td className="px-3 py-2 sm:px-6 sm:py-3 whitespace-nowrap text-xs sm:text-sm text-gray-600 dark:text-dark-textSecondary">
+                            {formatDate(sale.date)}
+                          </td>
+                          <td className="px-3 py-2 sm:px-6 sm:py-3 whitespace-nowrap text-xs sm:text-sm text-gray-600 dark:text-dark-textSecondary">
+                            {sale._id ? sale._id.toString().slice(-8) : '—'}
+                          </td>
+                          <td className="px-3 py-2 sm:px-6 sm:py-3 text-xs sm:text-sm text-gray-600 dark:text-dark-textSecondary">
+                            {sale.customer ? sale.customer.name : '—'}
+                          </td>
+                          <td className="px-3 py-2 sm:px-6 sm:py-3 text-xs sm:text-sm text-gray-600 dark:text-dark-textSecondary">
+                            {sale.items && sale.items.length > 0 ? (
+                              <div className="space-y-1">
+                                {sale.items.slice(0, 2).map((item, idx) => (
+                                  <div key={idx} className="text-xs">
+                                    {item.type === 'producto' ? '📦' : '✂️'} {item.quantity}x 
+                                    {item.item?.name || item.item || 'N/A'}
+                                  </div>
+                                ))}
+                                {sale.items.length > 2 && (
+                                  <div className="text-xs text-gray-500">
+                                    +{sale.items.length - 2} más
+                                  </div>
+                                )}
+                              </div>
+                            ) : '—'}
+                          </td>
+                          <td className="px-3 py-2 sm:px-6 sm:py-3 whitespace-nowrap text-xs sm:text-sm capitalize">
+                            {sale.paymentMethod || '—'}
+                          </td>
+                          <td className="px-3 py-2 sm:px-6 sm:py-3 whitespace-nowrap text-xs sm:text-sm capitalize">
+                            {sale.saleChannel === 'mercado_libre' ? 'Mercado Libre' : 
+                             sale.saleChannel === 'redes_sociales' ? 'Redes Sociales' : 
+                             sale.saleChannel || 'local'}
+                          </td>
+                          <td className="px-3 py-2 sm:px-6 sm:py-3 whitespace-nowrap text-xs sm:text-sm text-right font-semibold text-gray-600 dark:text-dark-textSecondary">
+                            {formatCurrency(sale.total)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-4 sm:mt-6 p-3 sm:p-4 bg-gray-50 dark:bg-dark-surface rounded-lg flex justify-between items-center">
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-dark-textSecondary">Total de ingresos</p>
+                  <p className="text-lg sm:text-xl font-bold text-gray-600 dark:text-dark-textSecondary">
+                    {formatCurrency(salesDetail.summary.totalVentas)}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-dark-textSecondary">
+                <svg className="w-12 h-12 sm:w-16 sm:h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <p className="text-base sm:text-lg">No hay ventas registradas en este período</p>
+              </div>
+            )}
+          </div>
+
+          <div className="px-4 py-3 sm:px-6 sm:py-4 border-t border-gray-200 dark:border-dark-border flex justify-end">
+            <button 
+              onClick={handleSalesModalClose}
               className="btn btn-secondary btn-md w-full sm:w-auto"
             >
               Cerrar
