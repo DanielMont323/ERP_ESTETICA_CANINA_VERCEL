@@ -66,11 +66,22 @@ const Reports = () => {
     }).format(amount);
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    // Parsear fecha como calendario (YYYY-MM-DD) sin conversión de timezone
-    const [year, month, day] = dateString.split('-').map(Number);
-    return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
+  const formatDate = (dateInput) => {
+    if (!dateInput) return '—';
+    // Si es string en formato YYYY-MM-DD (filtros de calendario), usar lógica original
+    if (typeof dateInput === 'string' && dateInput.includes('-') && dateInput.split('-').length === 3) {
+      const [year, month, day] = dateInput.split('-').map(Number);
+      if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+        return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
+      }
+    }
+    // Si es Date object o ISO string (MongoDB), usar lógica UTC (misma que Costs.js)
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return '—';
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const year = d.getUTCFullYear();
+    return `${day}/${month}/${year}`;
   };
 
   const getPeriodDisplay = () => {
