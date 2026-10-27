@@ -555,6 +555,25 @@ router.get('/sales-detail', async (req, res) => {
       .populate('mascota', 'name')
       .sort({ date: -1 });
 
+    // Populate manual de items (productos y servicios)
+    for (const venta of ventas) {
+      if (venta.items && venta.items.length > 0) {
+        for (const item of venta.items) {
+          if (item.type === 'producto' && item.item) {
+            const producto = await Producto.findById(item.item).select('name');
+            if (producto) {
+              item.item = producto;
+            }
+          } else if (item.type === 'servicio' && item.item) {
+            const servicio = await Servicio.findById(item.item).select('name');
+            if (servicio) {
+              item.item = servicio;
+            }
+          }
+        }
+      }
+    }
+
     // Calcular totales para verificación
     const totalVentas = ventas.reduce((sum, venta) => sum + (venta.total || 0), 0);
     const totalNetIncome = ventas.reduce((sum, venta) => sum + (venta.netIncome || 0), 0);
