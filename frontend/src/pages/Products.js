@@ -494,10 +494,11 @@ const Products = () => {
                     </td>
                     <td className="py-5 text-right">
                       <span className={`font-medium ${
-                        product.margin > 30 ? 'text-success-600' : 
-                        product.margin > 15 ? 'text-warning-600' : 'text-danger-600'
+                        product.margin && parseFloat(product.margin) > 30 ? 'text-success-600' : 
+                        product.margin && parseFloat(product.margin) > 15 ? 'text-warning-600' : 
+                        product.margin && parseFloat(product.margin) <= 15 ? 'text-danger-600' : 'text-gray-400'
                       }`}>
-                        {product.margin}%
+                        {product.margin !== null && product.margin !== undefined ? `${product.margin}%` : '—'}
                       </span>
                     </td>
                     <td className="py-5">
@@ -611,10 +612,11 @@ const Products = () => {
                     <div>
                       <p className="text-xs text-gray-500 dark:text-dark-textSecondary uppercase tracking-wide mb-1">Margen</p>
                       <p className={`font-medium ${
-                        product.margin > 30 ? 'text-success-600' : 
-                        product.margin > 15 ? 'text-warning-600' : 'text-danger-600'
+                        product.margin && parseFloat(product.margin) > 30 ? 'text-success-600' : 
+                        product.margin && parseFloat(product.margin) > 15 ? 'text-warning-600' : 
+                        product.margin && parseFloat(product.margin) <= 15 ? 'text-danger-600' : 'text-gray-400'
                       }`}>
-                        {product.margin}%
+                        {product.margin !== null && product.margin !== undefined ? `${product.margin}%` : '—'}
                       </p>
                     </div>
                     <span className={`badge badge-${expirationStatus.color}`}>

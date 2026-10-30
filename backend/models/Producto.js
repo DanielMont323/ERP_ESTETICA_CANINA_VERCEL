@@ -98,14 +98,32 @@ const productoSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
+}, {
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
 
 // Calcular margen de ganancia
 productoSchema.virtual('margin').get(function() {
-  if (this.price > 0) {
-    return ((this.price - this.cost) / this.price * 100).toFixed(2);
+  // Calcular precio final después del descuento
+  const discountPercent = this.discountPercentage || 0;
+  const finalPrice = this.price * (1 - discountPercent / 100);
+  
+  // Validar que tengamos valores válidos
+  if (!this.cost || !this.price || this.cost < 0 || this.price < 0) {
+    return null; // Retornar null para casos inválidos
   }
-  return 0;
+  
+  // Si el precio final es 0 o menor, no calcular margen
+  if (finalPrice <= 0) {
+    return null;
+  }
+  
+  // Calcular margen: ((Precio final - Costo) / Precio final) × 100
+  const margin = ((finalPrice - this.cost) / finalPrice) * 100;
+  
+  // Retornar con 2 decimales
+  return margin.toFixed(2);
 });
 
 // Actualizar updatedAt antes de guardar
