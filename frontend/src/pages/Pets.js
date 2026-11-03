@@ -115,7 +115,7 @@ const Pets = () => {
 
   const fetchCustomers = async () => {
     try {
-      const customersRes = await customersAPI.getAll();
+      const customersRes = await customersAPI.getAll({ limit: 1000 });
       setCustomers(customersRes.data.data);
     } catch (error) {
       console.error('Error al cargar clientes:', error);
