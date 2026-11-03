@@ -485,7 +485,7 @@ const Purchases = () => {
     // Cargar datos de la compra en el formulario
     const purchaseDate = purchase.date ? new Date(purchase.date) : null;
     const formattedDate = purchaseDate && !isNaN(purchaseDate.getTime()) 
-      ? `${purchaseDate.getFullYear()}-${String(purchaseDate.getMonth() + 1).padStart(2, '0')}-${String(purchaseDate.getDate()).padStart(2, '0')}` 
+      ? `${purchaseDate.getUTCFullYear()}-${String(purchaseDate.getUTCMonth() + 1).padStart(2, '0')}-${String(purchaseDate.getUTCDate()).padStart(2, '0')}` 
       : '';
     
     setFormData({
