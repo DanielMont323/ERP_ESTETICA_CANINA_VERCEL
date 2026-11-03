@@ -600,7 +600,7 @@ const Pets = () => {
                     <Autocomplete
                       placeholder="Sin dueño asignado"
                       fetchOptions={fetchCustomersForAutocomplete}
-                      displayValue={(item) => `${item.name} - ${item.phone}`}
+                      displayValue={(item) => `${item.name}${item.phone ? ` - ${item.phone}` : ''}`}
                       getOptionValue={(item) => item._id}
                       value={customers.find(c => c._id === formData.ownerId) || null}
                       onChange={(value) => setFormData({...formData, ownerId: value})}
