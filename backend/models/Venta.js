@@ -189,6 +189,12 @@ const ventaSchema = new mongoose.Schema({
     type: Date,
     default: getCurrentDateGMT7
   },
+  // true solo en ventas cuyo consumo de inventario quedó registrado en movimientos FIFO.
+  // Las ventas históricas no tienen el campo: su costo no es comprobable y sus artículos
+  // no pueden revertirse con FIFO (ver F4/F5).
+  fifoTracked: {
+    type: Boolean
+  },
   // Campos de idempotencia para PUT FIFO
   version: {
     type: Number,

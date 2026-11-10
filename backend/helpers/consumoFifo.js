@@ -150,55 +150,46 @@ async function consumirFIFOEnVenta(items, ventaId, ventaDate, userId, operationI
       producto.stock -= cantidadRequerida;
       await producto.save({ session });
 
+      // F6: asignar las capas consumidas a cada línea en orden FIFO (no prorrateando).
+      // Antes cada línea recibía una fracción de TODAS las capas, con redondeo a 2 decimales
+      // (p. ej. 0.33 + 0.67 unidades), y la reversión no restauraba cantidades exactas.
+      const pendientesPorCapa = layersConsumed.map(l => ({ ...l, restante: l.quantityConsumed }));
+      const EPS = 1e-9;
+
       for (const detalle of detalles) {
-        if (detalle.tipo === 'producto') {
-          const movement = new InventoryMovement({
-            producto: productoId,
-            type: 'salida',
-            quantity: -detalle.cantidad,
-            unitCost: layersConsumed[0].unitCost,
-            totalCost: (detalle.cantidad / cantidadRequerida) * layersConsumed.reduce((sum, l) => sum + l.cost, 0),
-            layersConsumed: layersConsumed.map(l => ({
-              layer: l.layer,
-              quantityConsumed: Math.round((l.quantityConsumed * detalle.cantidad / cantidadRequerida) * 100) / 100,
-              unitCost: l.unitCost,
-              cost: Math.round((l.cost * detalle.cantidad / cantidadRequerida) * 100) / 100
-            })),
-            source: 'venta',
-            sourceId: ventaId,
-            saleItemIndex: detalle.itemIndex,
-            sale: ventaId,
-            date: ventaDate,
-            user: userId,
-            operationId: operationId,
-            movementId: require('uuid').v4()
-          });
-          await movement.save({ session });
-        } else if (detalle.tipo === 'servicio') {
-          const movement = new InventoryMovement({
-            producto: productoId,
-            type: 'salida',
-            quantity: -detalle.cantidad,
-            unitCost: layersConsumed[0].unitCost,
-            totalCost: (detalle.cantidad / cantidadRequerida) * layersConsumed.reduce((sum, l) => sum + l.cost, 0),
-            layersConsumed: layersConsumed.map(l => ({
-              layer: l.layer,
-              quantityConsumed: Math.round((l.quantityConsumed * detalle.cantidad / cantidadRequerida) * 100) / 100,
-              unitCost: l.unitCost,
-              cost: Math.round((l.cost * detalle.cantidad / cantidadRequerida) * 100) / 100
-            })),
-            source: 'servicio',
-            sourceId: ventaId,
-            service: detalle.servicio,
-            saleItemIndex: detalle.itemIndex,
-            sale: ventaId,
-            date: ventaDate,
-            user: userId,
-            operationId: operationId,
-            movementId: require('uuid').v4()
-          });
-          await movement.save({ session });
+        let porAsignar = detalle.cantidad;
+        const asignadas = [];
+        for (const capa of pendientesPorCapa) {
+          if (porAsignar <= EPS) break;
+          if (capa.restante <= EPS) continue;
+          const q = Math.min(porAsignar, capa.restante);
+          asignadas.push({ layer: capa.layer, quantityConsumed: q, unitCost: capa.unitCost, cost: q * capa.unitCost });
+          capa.restante -= q;
+          porAsignar -= q;
         }
+        if (porAsignar > EPS) {
+          throw new Error(`Asignación FIFO incompleta para producto ${productoId} (faltan ${porAsignar})`);
+        }
+
+        const totalCost = asignadas.reduce((sum, l) => sum + l.cost, 0);
+        const movement = new InventoryMovement({
+          producto: productoId,
+          type: 'salida',
+          quantity: -detalle.cantidad,
+          unitCost: totalCost / detalle.cantidad, // costo unitario promedio de esta línea
+          totalCost,
+          layersConsumed: asignadas,
+          source: detalle.tipo === 'servicio' ? 'servicio' : 'venta',
+          sourceId: ventaId,
+          ...(detalle.tipo === 'servicio' && { service: detalle.servicio }),
+          saleItemIndex: detalle.itemIndex,
+          sale: ventaId,
+          date: ventaDate,
+          user: userId,
+          operationId: operationId,
+          movementId: require('uuid').v4()
+        });
+        await movement.save({ session });
       }
     }
 

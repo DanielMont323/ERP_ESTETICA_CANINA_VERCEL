@@ -574,6 +574,7 @@ router.post('/', authenticateToken, async (req, res) => {
         notes,
         commission,
         status: 'completada',
+        fifoTracked: true,
         ...(date && { date: new Date(date) }),
         ...(employeeDiscountApplied !== undefined && { employeeDiscountApplied }),
         ...(employeeDiscountPercentage !== undefined && { employeeDiscountPercentage }),
@@ -1078,8 +1079,19 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
         // 6. Si se modifican items, procesar FIFO
         if (items) {
+          // F5: una venta anterior a FIFO no tiene movimientos que revertir; consumir de nuevo
+          // descontaría el inventario dos veces. Sus artículos no se pueden modificar.
+          if (!venta.fifoTracked) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(409).json({
+              success: false,
+              message: 'Esta venta es anterior al control FIFO de inventario. No se pueden modificar sus productos o servicios; solo estado y notas.'
+            });
+          }
+
           // 6.1 Revertir FIFO original
-          await revertirFIFOEnVenta(venta._id, effectiveOperationId, req.user._id, session);
+          await revertirFIFOEnVenta(venta._id, effectiveOperationId, req.user._id, session, 'edicion_venta');
 
           // 6.2 Validar sincronización después de revertir
           await validarSincronizacionStockCapas(venta._id, session);
@@ -1273,10 +1285,17 @@ router.put('/:id', authenticateToken, async (req, res) => {
 // @route   DELETE /api/ventas/:id
 // @desc    Cancelar venta y devolver stock (solo admin)
 router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
+  // F4: la cancelación se hace en una transacción y, para ventas con FIFO, restaura las capas
+  // exactas de origen (productos e insumos de servicios) mediante movimientos compensatorios.
+  // Antes solo sumaba al stock: stock y capas quedaban desincronizados y el producto bloqueado.
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
-    const venta = await Venta.findById(req.params.id);
-    
+    const venta = await Venta.findById(req.params.id).session(session);
+
     if (!venta) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({
         success: false,
         message: 'Venta no encontrada'
@@ -1284,32 +1303,57 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     if (venta.status === 'cancelada') {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({
         success: false,
         message: 'La venta ya está cancelada'
       });
     }
 
-    // Devolver stock al inventario
-    for (const item of venta.items) {
-      if (item.type === 'producto') {
-        const producto = await Producto.findById(item.item);
-        if (producto) {
-          producto.stock += item.quantity;
-          await producto.save();
+    if (venta.fifoTracked) {
+      await revertirFIFOEnVenta(venta._id, uuidv4(), req.user._id, session, 'cancelacion_venta');
+      await validarSincronizacionStockCapas(venta._id, session);
+    } else {
+      // Venta anterior a FIFO: comportamiento original (sumar al stock), salvo que el producto
+      // ya tenga capas FIFO, porque sumar sin capa desincronizaría el inventario.
+      for (const item of venta.items) {
+        if (item.type !== 'producto') continue;
+        const tieneCapas = await InventoryLayer.exists({ producto: item.item, isActive: true }).session(session);
+        if (tieneCapas) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(409).json({
+            success: false,
+            message: 'Esta venta es anterior al control FIFO y alguno de sus productos ya tiene inventario FIFO. La devolución requiere un ajuste de inventario.'
+          });
+        }
+      }
+      for (const item of venta.items) {
+        if (item.type === 'producto') {
+          const producto = await Producto.findById(item.item).session(session);
+          if (producto) {
+            producto.stock += item.quantity;
+            await producto.save({ session });
+          }
         }
       }
     }
 
     // Actualizar status
     venta.status = 'cancelada';
-    await venta.save();
+    await venta.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
 
     res.json({
       success: true,
       message: 'Venta cancelada y stock devuelto'
     });
   } catch (error) {
+    await session.abortTransaction().catch(() => {});
+    session.endSession();
     console.error(error);
     res.status(500).json({
       success: false,

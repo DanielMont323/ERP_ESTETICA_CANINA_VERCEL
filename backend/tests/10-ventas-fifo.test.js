@@ -148,3 +148,23 @@ describe('F14 — productos con stock y sin capas FIFO', () => {
     expect([400, 409, 422]).toContain(res.status);
   });
 });
+
+describe('F4/F5 — ventas anteriores a FIFO (sin fifoTracked)', () => {
+  test('cancelar una venta histórica cuyo producto ya tiene capas FIFO se rechaza sin cambios', async () => {
+    const p = await h.producto({ stock: 8, fifoInitialized: true });
+    await InventoryLayer.create({ producto: p._id, quantity: 8, initialQuantity: 8, remainingQuantity: 8, unitCost: 50, totalCost: 400, source: 'inventario_inicial', isInitialLayer: true, receivedDate: new Date() });
+    const legacy = await Venta.create({ items: [linea(p, 2)], paymentMethod: 'efectivo', saleChannel: 'local', status: 'completada' });
+    const del = await h.request(h.app).delete(`/api/ventas/${legacy._id}`).set(h.auth(admin.token));
+    expect(del.status).toBe(409);
+    expect(await h.stockYCapas(p._id)).toMatchObject({ stock: 8, capas: 8 });
+    expect((await Venta.findById(legacy._id)).status).toBe('completada');
+  });
+
+  test('cancelar una venta histórica de un producto sin FIFO conserva el comportamiento original', async () => {
+    const p = await h.producto({ stock: 3 });
+    const legacy = await Venta.create({ items: [linea(p, 2)], paymentMethod: 'efectivo', saleChannel: 'local', status: 'completada' });
+    const del = await h.request(h.app).delete(`/api/ventas/${legacy._id}`).set(h.auth(admin.token));
+    expect(del.status).toBe(200);
+    expect((await Producto.findById(p._id)).stock).toBe(5);
+  });
+});

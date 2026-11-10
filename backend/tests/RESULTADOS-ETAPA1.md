@@ -60,3 +60,24 @@ Defectos que antes estaban bloqueados y ahora quedan **confirmados**:
 | F6 | Una línea consume 0.99 unidades de una capa (reparto con redondeo) |
 
 Siguen confirmados sin cambios: F5, F7, F8, F9, F10, F12, S1, S2.
+
+---
+
+# Etapa 2 — Ediciones y cancelaciones de ventas (2026-11-10)
+
+| Id | Archivo | Cambio |
+|---|---|---|
+| F2/F3 | `helpers/revertirFifoVenta.js` | Una reversión por movimiento original, con `originalMovement`; se omiten los ya revertidos. Los originales no se modifican |
+| F6 | `helpers/consumoFifo.js` | Las capas se asignan a cada línea en orden FIFO (sin prorrateo ni redondeo) |
+| F4 | `routes/ventas.js` (DELETE) | Transacción; ventas FIFO restauran capas e insumos con movimientos `cancelacion_venta` |
+| F5 | `routes/ventas.js` (PUT) | Venta sin `fifoTracked` → 409 al intentar modificar artículos |
+| — | `models/Venta.js` | Campo nuevo opcional `fifoTracked` (solo ventas nuevas). Las 544 ventas existentes no lo tienen |
+
+Decisión de negocio a confirmar: cancelar una venta **histórica** cuyo producto ya tiene capas FIFO
+responde 409 (requiere ajuste de inventario). Si el producto no tiene capas, se conserva el comportamiento original.
+
+Resultado: 34 pruebas — **19 pasan, 15 fallan**. Todas las de ventas (13) pasan.
+Pendientes: F7, F8, F9, F10 (compras), F12 (stock fuera de FIFO), S1, S2 (permisos).
+
+Riesgo detectado sin corregir (F19): `PUT /api/ventas/:id` permite a cualquier usuario autenticado
+poner `status: 'cancelada'` sin devolver inventario (no pasa por la lógica de cancelación).
