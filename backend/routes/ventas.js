@@ -1,4 +1,6 @@
 const express = require('express');
+const mongoose = require('mongoose');
+const { v4: uuidv4 } = require('uuid');
 const Venta = require('../models/Venta');
 const Producto = require('../models/Producto');
 const Servicio = require('../models/Servicio');
@@ -6,8 +8,15 @@ const Cliente = require('../models/Cliente');
 const Mascota = require('../models/Mascota');
 const CarnetVacunacion = require('../models/CarnetVacunacion');
 const Recordatorio = require('../models/Recordatorio');
+const InventoryLayer = require('../models/InventoryLayer');
+const InventoryMovement = require('../models/InventoryMovement');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { getCurrentDateGMT7, parseCalendarDate } = require('../helpers/timezone');
+const { consumirFIFOEnVenta } = require('../helpers/consumoFifo');
+const { revertirFIFOEnVenta } = require('../helpers/revertirFifoVenta');
+const { validarSincronizacionStockCapas } = require('../helpers/validarSincronizacionStockCapas');
+const { revertirHistorialMedicoYCarnet } = require('../helpers/revertirHistorialMedicoYCarnet');
+const { actualizarHistorialMedicoYCarnet } = require('../helpers/actualizarHistorialMedicoYCarnet');
 const router = express.Router();
 
 // @route   GET /api/ventas
@@ -543,420 +552,419 @@ router.post('/', authenticateToken, async (req, res) => {
       }
     }
 
-    // 4. Verificar disponibilidad de stock (SIN actualizar aún)
-    for (const item of items) {
-      if (item.type === 'producto') {
-        const producto = await Producto.findById(item.item);
-        if (!producto) {
-          return res.status(404).json({
-            success: false,
-            message: `Producto con ID ${item.item} no encontrado`
-          });
+    // 4. Iniciar transacción MongoDB para atomicidad de inventario
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      // 5. Crear venta (dentro de la transacción)
+      const venta = await Venta.create([{
+        items,
+        paymentMethod: effectivePaymentMethod,
+        ...(effectivePayments.length > 0 && { payments: effectivePayments }),
+        saleChannel,
+        customer,
+        mascota,
+        user,
+        notes,
+        commission,
+        status: 'completada',
+        ...(date && { date: new Date(date) }),
+        ...(employeeDiscountApplied !== undefined && { employeeDiscountApplied }),
+        ...(employeeDiscountPercentage !== undefined && { employeeDiscountPercentage }),
+        ...(saleChannel === 'mercado_libre' && manualFinancials !== undefined && { manualFinancials }),
+        ...(saleChannel === 'mercado_libre' && subtotal !== undefined && { subtotal }),
+        ...(saleChannel === 'mercado_libre' && total !== undefined && { total }),
+        ...(saleChannel === 'mercado_libre' && netIncome !== undefined && { netIncome })
+      }], { session });
+      const ventaDoc = venta[0];
+
+      // 5.5. Validar que los pagos coincidan con el total (si se usó payments[])
+      if (effectivePayments.length > 0) {
+        const totalPayments = effectivePayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const tolerance = 0.01;
+
+        const hasCashPayment = effectivePayments.some(p => p.method === 'efectivo');
+
+        if (hasCashPayment) {
+          if (totalPayments < ventaDoc.total - tolerance) {
+            const missing = ventaDoc.total - totalPayments;
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(400).json({
+              success: false,
+              message: `Faltan $${missing.toFixed(2)} para completar el pago`
+            });
+          }
+        } else {
+          if (Math.abs(totalPayments - ventaDoc.total) > tolerance) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(400).json({
+              success: false,
+              message: `La suma de pagos ($${totalPayments.toFixed(2)}) no coincide con el total de la venta ($${ventaDoc.total.toFixed(2)})`
+            });
+          }
         }
 
-        if (producto.stock < item.quantity) {
-          return res.status(400).json({
-            success: false,
-            message: `Stock insuficiente para ${producto.name}. Stock disponible: ${producto.stock}`
-          });
+        const cashPayments = effectivePayments.filter(p => p.method === 'efectivo');
+        if (cashPayments.length > 0) {
+          const totalCash = cashPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+          const nonCashTotal = effectivePayments.filter(p => p.method !== 'efectivo').reduce((sum, p) => sum + (p.amount || 0), 0);
+
+          const cashRequired = ventaDoc.total - nonCashTotal;
+          const calculatedChange = Math.round((totalCash - cashRequired) * 100) / 100;
+
+          if (calculatedChange >= 0) {
+            ventaDoc.amountReceived = totalCash;
+            ventaDoc.change = calculatedChange;
+            await ventaDoc.save({ session });
+          }
         }
       }
-    }
 
-    // 5. Crear venta
-    const venta = await Venta.create({
-      items,
-      paymentMethod: effectivePaymentMethod,
-      ...(effectivePayments.length > 0 && { payments: effectivePayments }),
-      saleChannel,
-      customer,
-      mascota,
-      user,
-      notes,
-      commission,
-      status: 'completada',
-      // Usar fecha personalizada si se proporciona, si no usa el default del modelo
-      ...(date && { date: new Date(date) }),
-      // Incluir campos de descuento de empleado
-      ...(employeeDiscountApplied !== undefined && { employeeDiscountApplied }),
-      ...(employeeDiscountPercentage !== undefined && { employeeDiscountPercentage }),
-      // Solo incluir valores financieros manuales si son proporcionados y es Mercado Libre
-      ...(saleChannel === 'mercado_libre' && manualFinancials !== undefined && { manualFinancials }),
-      ...(saleChannel === 'mercado_libre' && subtotal !== undefined && { subtotal }),
-      ...(saleChannel === 'mercado_libre' && total !== undefined && { total }),
-      ...(saleChannel === 'mercado_libre' && netIncome !== undefined && { netIncome })
-    });
+      // 6. Calcular y validar cambio para efectivo (compatibilidad con ventas antiguas)
+      if (!payments && effectivePaymentMethod === 'efectivo' && amountReceived) {
+        const calculatedChange = Math.round((amountReceived - ventaDoc.total) * 100) / 100;
 
-    // 5.5. Validar que los pagos coincidan con el total (si se usó payments[])
-    if (effectivePayments.length > 0) {
-      const totalPayments = effectivePayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-      const tolerance = 0.01; // Tolerancia para redondeo
-      
-      // Verificar si hay pagos en efectivo
-      const hasCashPayment = effectivePayments.some(p => p.method === 'efectivo');
-      
-      if (hasCashPayment) {
-        // Con efectivo, permitir sobrepago (el excedente será el cambio)
-        if (totalPayments < venta.total - tolerance) {
-          const missing = venta.total - totalPayments;
-          // Eliminar venta si los pagos son insuficientes (stock no fue descargado aún)
-          await Venta.findByIdAndDelete(venta._id);
-          
+        if (calculatedChange < 0) {
+          await session.abortTransaction();
+          session.endSession();
           return res.status(400).json({
             success: false,
-            message: `Faltan $${missing.toFixed(2)} para completar el pago`
+            message: `El monto recibido es insuficiente. Faltan $${Math.abs(calculatedChange).toFixed(2)}`
           });
         }
-      } else {
-        // Sin efectivo, el pago debe ser exacto
-        if (Math.abs(totalPayments - venta.total) > tolerance) {
-          // Eliminar venta si los pagos no coinciden (stock no fue descargado aún)
-          await Venta.findByIdAndDelete(venta._id);
-          
-          return res.status(400).json({
-            success: false,
-            message: `La suma de pagos ($${totalPayments.toFixed(2)}) no coincide con el total de la venta ($${venta.total.toFixed(2)})`
-          });
-        }
-      }
-      
-      // Calcular cambio si hay pagos en efectivo
-      const cashPayments = effectivePayments.filter(p => p.method === 'efectivo');
-      if (cashPayments.length > 0) {
-        const totalCash = cashPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-        const nonCashTotal = effectivePayments.filter(p => p.method !== 'efectivo').reduce((sum, p) => sum + (p.amount || 0), 0);
-        
-        // El cambio es el excedente de efectivo sobre lo que corresponde pagar
-        const cashRequired = venta.total - nonCashTotal;
-        const calculatedChange = Math.round((totalCash - cashRequired) * 100) / 100;
-        
-        if (calculatedChange >= 0) {
-          venta.amountReceived = totalCash;
-          venta.change = calculatedChange;
-          await venta.save();
-        }
-      }
-    }
 
-    // 5.5. Agregar venta al historial de compras del cliente (solo si hay cliente y hay productos no vacuna/desparasitante)
-    if (customer) {
-      // Verificar si hay productos que no son vacunas/desparasitantes
-      let hasNonVaccineProducts = false;
-      
+        ventaDoc.amountReceived = amountReceived;
+        ventaDoc.change = calculatedChange;
+        await ventaDoc.save({ session });
+      }
+
+      // 7. Consumir capas FIFO usando función auxiliar
+      await consumirFIFOEnVenta(items, ventaDoc._id, ventaDoc.date, req.user._id, session);
+
+      // 8. Registrar servicios en el historial médico de las mascotas (dentro de la transacción)
       for (const item of items) {
-        if (item.type === 'producto') {
-          const producto = await Producto.findById(item.item);
-          if (producto) {
-            const categoryName = await getCategoryName(producto.category);
-            const isVaccineDewormer = isVaccineOrDewormer(categoryName);
-            
-            if (!isVaccineDewormer) {
-              hasNonVaccineProducts = true;
-              break;
-            }
-          }
-        } else if (item.type === 'servicio') {
-          // Los servicios también se agregan al historial de compras
-          hasNonVaccineProducts = true;
-          break;
-        }
-      }
-      
-      // Solo agregar al historial si hay productos/servicios no vacuna/desparasitante
-      if (hasNonVaccineProducts) {
-        const Cliente = require('../models/Cliente');
-        await Cliente.findByIdAndUpdate(
-          customer,
-          { $push: { purchaseHistory: venta._id } }
-        );
-      }
-    }
-
-    // 6. Calcular y validar cambio para efectivo (compatibilidad con ventas antiguas)
-    if (!payments && effectivePaymentMethod === 'efectivo' && amountReceived) {
-      const calculatedChange = Math.round((amountReceived - venta.total) * 100) / 100;
-      
-      if (calculatedChange < 0) {
-        // Eliminar venta si el pago es insuficiente (stock no fue descargado aún)
-        await Venta.findByIdAndDelete(venta._id);
-        
-        return res.status(400).json({
-          success: false,
-          message: `El monto recibido es insuficiente. Faltan $${Math.abs(calculatedChange).toFixed(2)}`
-        });
-      }
-      
-      venta.amountReceived = amountReceived;
-      venta.change = calculatedChange;
-      await venta.save();
-    }
-
-    // 7. Actualizar inventario (solo después de todas las validaciones)
-    for (const item of items) {
-      if (item.type === 'producto') {
-        const producto = await Producto.findById(item.item);
-        if (producto) {
-          producto.stock -= item.quantity;
-          await producto.save();
-        }
-      } else if (item.type === 'servicio') {
-        // Descontar insumos del inventario para servicios
-        const servicio = await Servicio.findById(item.item);
-        if (servicio && servicio.insumos && servicio.insumos.length > 0) {
-          for (const insumo of servicio.insumos) {
-            const producto = await Producto.findById(insumo.producto);
-            if (producto) {
-              const cantidadUsada = insumo.cantidad * item.quantity;
-              producto.stock -= cantidadUsada;
-              if (producto.stock < 0) producto.stock = 0;
-              await producto.save();
-            }
-          }
-        }
-      }
-    }
-
-    // 8. Registrar servicios en el historial médico de las mascotas
-    for (const item of items) {
-      if (item.type === 'servicio' && item.mascota) {
-        const servicio = await Servicio.findById(item.item);
-        if (servicio) {
-          const mascotaDoc = await Mascota.findById(item.mascota);
-          if (mascotaDoc) {
-            // Agregar servicio al historial médico de la mascota
-            await Mascota.findByIdAndUpdate(
-              item.mascota,
-              {
-                $push: {
-                  medicalHistory: {
-                    date: venta.date,
-                    description: `Servicio: ${servicio.name} (Venta #${venta._id})`,
-                    veterinarian: req.user.name || 'Sistema',
-                    cost: item.subtotalAfterDiscount || (item.quantity * item.unitPrice)
-                  }
-                }
-              }
-            );
-          }
-        }
-      }
-    }
-
-    // 9. Registrar vacunas y desparasitantes en el carnet si aplica
-    if (hasVaccines || hasDewormers) {
-      try {
-        // Procesar cada producto con sus aplicaciones
-        for (const { producto, quantity, nextDoseDate, aplicaciones, mascota } of vaccineProducts) {
-          const clienteDoc = await Cliente.findById(customer);
-          
-          // Si hay aplicaciones array, procesar cada aplicación individualmente
-          if (aplicaciones && aplicaciones.length > 0) {
-            for (const aplicacion of aplicaciones) {
-              const mascotaDoc = await Mascota.findById(aplicacion.mascota);
-              
-              // Buscar o crear carnet de vacunación para esta mascota específica
-              let carnet = await CarnetVacunacion.findOne({ mascota: aplicacion.mascota });
-              
-              if (!carnet) {
-                carnet = new CarnetVacunacion({
-                  mascota: aplicacion.mascota,
-                  nombreMascota: mascotaDoc.name,
-                  especie: mascotaDoc.type,
-                  raza: mascotaDoc.breed,
-                  propietario: customer,
-                  nombrePropietario: clienteDoc.name,
-                  vacunas: []
-                });
-              }
-              
-              // Agregar vacuna al carnet
-              const vacunaEntry = {
-                vacuna: producto._id,
-                nombre: producto.name,
-                tipo: 'vacuna',
-                fecha: aplicacion.fechaAplicacion || getCurrentDateGMT7(),
-                proximaDosis: aplicacion.proximaDosis || nextDoseDate || null,
-                diasProximaDosis: aplicacion.diasProximaDosis || null,
-                venta: venta._id
-              };
-              carnet.vacunas.push(vacunaEntry);
-              await carnet.save();
-            }
-          } else {
-            // Compatibilidad con código existente: usar mascota a nivel de item
-            const mascotaDoc = await Mascota.findById(mascota);
-            
-            // Buscar o crear carnet de vacunación para esta mascota específica
-            let carnet = await CarnetVacunacion.findOne({ mascota });
-            
-            if (!carnet) {
-              carnet = new CarnetVacunacion({
-                mascota,
-                nombreMascota: mascotaDoc.name,
-                especie: mascotaDoc.type,
-                raza: mascotaDoc.breed,
-                propietario: customer,
-                nombrePropietario: clienteDoc.name,
-                vacunas: []
-              });
-            }
-            
-            // Agregar vacunas al carnet
-            for (let i = 0; i < quantity; i++) {
-              const vacunaEntry = {
-                vacuna: producto._id,
-                nombre: producto.name,
-                tipo: 'vacuna',
-                fecha: getCurrentDateGMT7(),
-                proximaDosis: nextDoseDate || null,
-                venta: venta._id
-              };
-              carnet.vacunas.push(vacunaEntry);
-            }
-            
-            await carnet.save();
-          }
-        }
-        
-        // Procesar desparasitantes
-        for (const { producto, quantity, nextDoseDate, aplicaciones, mascota } of dewormerProducts) {
-          const clienteDoc = await Cliente.findById(customer);
-          
-          // Si hay aplicaciones array, procesar cada aplicación individualmente
-          if (aplicaciones && aplicaciones.length > 0) {
-            for (const aplicacion of aplicaciones) {
-              const mascotaDoc = await Mascota.findById(aplicacion.mascota);
-              
-              // Buscar o crear carnet de vacunación para esta mascota específica
-              let carnet = await CarnetVacunacion.findOne({ mascota: aplicacion.mascota });
-              
-              if (!carnet) {
-                carnet = new CarnetVacunacion({
-                  mascota: aplicacion.mascota,
-                  nombreMascota: mascotaDoc.name,
-                  especie: mascotaDoc.type,
-                  raza: mascotaDoc.breed,
-                  propietario: customer,
-                  nombrePropietario: clienteDoc.name,
-                  vacunas: []
-                });
-              }
-              
-              // Agregar desparasitante al carnet
-              const desparasitanteEntry = {
-                vacuna: producto._id,
-                nombre: producto.name,
-                tipo: 'desparasitante',
-                fecha: aplicacion.fechaAplicacion || getCurrentDateGMT7(),
-                proximaDosis: aplicacion.proximaDosis || nextDoseDate || null,
-                diasProximaDosis: aplicacion.diasProximaDosis || null,
-                venta: venta._id
-              };
-              carnet.vacunas.push(desparasitanteEntry);
-              await carnet.save();
-            }
-          } else {
-            // Compatibilidad con código existente: usar mascota a nivel de item
-            const mascotaDoc = await Mascota.findById(mascota);
-            
-            // Buscar o crear carnet de vacunación para esta mascota específica
-            let carnet = await CarnetVacunacion.findOne({ mascota });
-            
-            if (!carnet) {
-              carnet = new CarnetVacunacion({
-                mascota,
-                nombreMascota: mascotaDoc.name,
-                especie: mascotaDoc.type,
-                raza: mascotaDoc.breed,
-                propietario: customer,
-                nombrePropietario: clienteDoc.name,
-                vacunas: []
-              });
-            }
-            
-            // Agregar desparasitantes al carnet
-            for (let i = 0; i < quantity; i++) {
-              const desparasitanteEntry = {
-                vacuna: producto._id,
-                nombre: producto.name,
-                tipo: 'desparasitante',
-                fecha: getCurrentDateGMT7(),
-                proximaDosis: nextDoseDate || null,
-                venta: venta._id
-              };
-              carnet.vacunas.push(desparasitanteEntry);
-            }
-            
-            await carnet.save();
-          }
-        }
-      } catch (error) {
-        console.error('Error al registrar vacunas/desparasitantes en carnet:', error);
-        // No fallar la venta si falla el registro del carnet, solo loggear el error
-      }
-    }
-
-    // 9. Registrar servicios asociados a mascotas en medicalHistory
-    for (const item of items) {
-      if (item.type === 'servicio' && item.mascota) {
-        try {
+        if (item.type === 'servicio' && item.mascota) {
           const servicio = await Servicio.findById(item.item);
           if (servicio) {
-            const mascota = await Mascota.findById(item.mascota);
-            if (mascota) {
-              mascota.medicalHistory.push({
-                description: `Servicio: ${servicio.name}`,
-                cost: item.subtotal || (item.quantity * item.unitPrice),
-                date: getCurrentDateGMT7(),
-                veterinarian: user ? await (await require('../models/Usuario').findById(user)).name : 'Sistema'
-              });
-              await mascota.save();
+            const mascotaDoc = await Mascota.findById(item.mascota);
+            if (mascotaDoc) {
+              await Mascota.findByIdAndUpdate(
+                item.mascota,
+                {
+                  $push: {
+                    medicalHistory: {
+                      date: ventaDoc.date,
+                      description: `Servicio: ${servicio.name} (Venta #${ventaDoc._id})`,
+                      veterinarian: req.user.name || 'Sistema',
+                      cost: item.subtotalAfterDiscount || (item.quantity * item.unitPrice)
+                    }
+                  }
+                },
+                { session }
+              );
+            }
+          }
+        }
+      }
+
+      // 9. Registrar vacunas y desparasitantes en el carnet si aplica (dentro de la transacción)
+      if (hasVaccines || hasDewormers) {
+        try {
+          for (const { producto, quantity, nextDoseDate, aplicaciones, mascota } of vaccineProducts) {
+            const clienteDoc = await Cliente.findById(customer);
+
+            if (aplicaciones && aplicaciones.length > 0) {
+              for (const aplicacion of aplicaciones) {
+                const mascotaDoc = await Mascota.findById(aplicacion.mascota);
+                let carnet = await CarnetVacunacion.findOne({ mascota: aplicacion.mascota }).session(session);
+
+                if (!carnet) {
+                  carnet = new CarnetVacunacion({
+                    mascota: aplicacion.mascota,
+                    nombreMascota: mascotaDoc.name,
+                    especie: mascotaDoc.type,
+                    raza: mascotaDoc.breed,
+                    propietario: customer,
+                    nombrePropietario: clienteDoc.name,
+                    vacunas: []
+                  });
+                }
+
+                const vacunaEntry = {
+                  vacuna: producto._id,
+                  nombre: producto.name,
+                  tipo: 'vacuna',
+                  fecha: aplicacion.fechaAplicacion || getCurrentDateGMT7(),
+                  proximaDosis: aplicacion.proximaDosis || nextDoseDate || null,
+                  diasProximaDosis: aplicacion.diasProximaDosis || null,
+                  venta: ventaDoc._id
+                };
+                carnet.vacunas.push(vacunaEntry);
+                await carnet.save({ session });
+              }
+            } else {
+              const mascotaDoc = await Mascota.findById(mascota);
+              let carnet = await CarnetVacunacion.findOne({ mascota }).session(session);
+
+              if (!carnet) {
+                carnet = new CarnetVacunacion({
+                  mascota,
+                  nombreMascota: mascotaDoc.name,
+                  especie: mascotaDoc.type,
+                  raza: mascotaDoc.breed,
+                  propietario: customer,
+                  nombrePropietario: clienteDoc.name,
+                  vacunas: []
+                });
+              }
+
+              for (let i = 0; i < quantity; i++) {
+                const vacunaEntry = {
+                  vacuna: producto._id,
+                  nombre: producto.name,
+                  tipo: 'vacuna',
+                  fecha: getCurrentDateGMT7(),
+                  proximaDosis: nextDoseDate || null,
+                  venta: ventaDoc._id
+                };
+                carnet.vacunas.push(vacunaEntry);
+              }
+
+              await carnet.save({ session });
+            }
+          }
+
+          for (const { producto, quantity, nextDoseDate, aplicaciones, mascota } of dewormerProducts) {
+            const clienteDoc = await Cliente.findById(customer);
+
+            if (aplicaciones && aplicaciones.length > 0) {
+              for (const aplicacion of aplicaciones) {
+                const mascotaDoc = await Mascota.findById(aplicacion.mascota);
+                let carnet = await CarnetVacunacion.findOne({ mascota: aplicacion.mascota }).session(session);
+
+                if (!carnet) {
+                  carnet = new CarnetVacunacion({
+                    mascota: aplicacion.mascota,
+                    nombreMascota: mascotaDoc.name,
+                    especie: mascotaDoc.type,
+                    raza: mascotaDoc.breed,
+                    propietario: customer,
+                    nombrePropietario: clienteDoc.name,
+                    vacunas: []
+                  });
+                }
+
+                const desparasitanteEntry = {
+                  vacuna: producto._id,
+                  nombre: producto.name,
+                  tipo: 'desparasitante',
+                  fecha: aplicacion.fechaAplicacion || getCurrentDateGMT7(),
+                  proximaDosis: aplicacion.proximaDosis || nextDoseDate || null,
+                  diasProximaDosis: aplicacion.diasProximaDosis || null,
+                  venta: ventaDoc._id
+                };
+                carnet.vacunas.push(desparasitanteEntry);
+                await carnet.save({ session });
+              }
+            } else {
+              const mascotaDoc = await Mascota.findById(mascota);
+              let carnet = await CarnetVacunacion.findOne({ mascota }).session(session);
+
+              if (!carnet) {
+                carnet = new CarnetVacunacion({
+                  mascota,
+                  nombreMascota: mascotaDoc.name,
+                  especie: mascotaDoc.type,
+                  raza: mascotaDoc.breed,
+                  propietario: customer,
+                  nombrePropietario: clienteDoc.name,
+                  vacunas: []
+                });
+              }
+
+              for (let i = 0; i < quantity; i++) {
+                const desparasitanteEntry = {
+                  vacuna: producto._id,
+                  nombre: producto.name,
+                  tipo: 'desparasitante',
+                  fecha: getCurrentDateGMT7(),
+                  proximaDosis: nextDoseDate || null,
+                  venta: ventaDoc._id
+                };
+                carnet.vacunas.push(desparasitanteEntry);
+              }
+
+              await carnet.save({ session });
             }
           }
         } catch (error) {
-          console.error('Error al registrar servicio en historial médico:', error);
-          // No fallar la venta si falla el registro del historial
+          await session.abortTransaction();
+          session.endSession();
+          console.error('Error al registrar vacunas/desparasitantes en carnet:', error);
+          return res.status(500).json({
+            success: false,
+            message: 'Error al registrar vacunas/desparasitantes en carnet'
+          });
         }
       }
+
+      // 10. Registrar servicios asociados a mascotas en medicalHistory (dentro de la transacción)
+      for (const item of items) {
+        if (item.type === 'servicio' && item.mascota) {
+          try {
+            const servicio = await Servicio.findById(item.item);
+            if (servicio) {
+              const mascota = await Mascota.findById(item.mascota);
+              if (mascota) {
+                mascota.medicalHistory.push({
+                  description: `Servicio: ${servicio.name}`,
+                  cost: item.subtotal || (item.quantity * item.unitPrice),
+                  date: getCurrentDateGMT7(),
+                  veterinarian: user ? await (await require('../models/Usuario').findById(user)).name : 'Sistema'
+                });
+                await mascota.save({ session });
+              }
+            }
+          } catch (error) {
+            await session.abortTransaction();
+            session.endSession();
+            console.error('Error al registrar servicio en historial médico:', error);
+            return res.status(500).json({
+              success: false,
+              message: 'Error al registrar servicio en historial médico'
+            });
+          }
+        }
+      }
+
+      // 11. Commit de la transacción
+      await session.commitTransaction();
+      session.endSession();
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error; // Re-throw para que el catch externo lo maneje
     }
 
+    // 12. Agregar venta al historial de compras del cliente (fuera de la transacción)
+      if (customer) {
+        let hasNonVaccineProducts = false;
+
+        for (const item of items) {
+          if (item.type === 'producto') {
+            const producto = await Producto.findById(item.item);
+            if (producto) {
+              const categoryName = await getCategoryName(producto.category);
+              const isVaccineDewormer = isVaccineOrDewormer(categoryName);
+
+              if (!isVaccineDewormer) {
+                hasNonVaccineProducts = true;
+                break;
+              }
+            }
+          } else if (item.type === 'servicio') {
+            hasNonVaccineProducts = true;
+            break;
+          }
+        }
+
+        if (hasNonVaccineProducts) {
+          const Cliente = require('../models/Cliente');
+          await Cliente.findByIdAndUpdate(
+            customer,
+            { $push: { purchaseHistory: ventaDoc._id } }
+          );
+        }
+      }
+
     // Populate para respuesta
-    await venta.populate('customer', 'name phone');
-    await venta.populate('mascota', 'name type breed');
-    await venta.populate('user', 'name');
-    await venta.populate('items.item', 'name');
+    await ventaDoc.populate('customer', 'name phone');
+    await ventaDoc.populate('mascota', 'name type breed');
+    await ventaDoc.populate('user', 'name');
+    await ventaDoc.populate('items.item', 'name');
 
     res.status(201).json({
       success: true,
-      data: venta
+      data: ventaDoc
     });
-  } catch (error) {
-    console.error(error);
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(val => val.message);
-      return res.status(400).json({
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      console.error(error);
+      if (error.name === 'ValidationError') {
+        const messages = Object.values(error.errors).map(val => val.message);
+        return res.status(400).json({
+          success: false,
+          message: messages.join(', ')
+        });
+      }
+      res.status(500).json({
         success: false,
-        message: messages.join(', ')
+        message: 'Error al crear venta'
       });
-    }
-    res.status(500).json({
-      success: false,
-      message: 'Error al crear venta'
-    });
   }
 });
 
 // @route   PUT /api/ventas/:id
-// @desc    Actualizar venta (solo status o notas para usuarios normales, campos sensibles solo para admin)
+// @desc    Actualizar venta con FIFO (solo status o notas para usuarios normales, campos sensibles solo para admin)
 router.put('/:id', authenticateToken, async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    const { status, notes, items, total, commission, discount, customer, mascota, amountReceived, change, paymentMethod, saleChannel, employeeDiscountApplied, employeeDiscountPercentage, payments, date } = req.body;
-    
-    const venta = await Venta.findById(req.params.id);
+    const { status, notes, items, total, commission, discount, customer, mascota, amountReceived, change, paymentMethod, saleChannel, employeeDiscountApplied, employeeDiscountPercentage, payments, date, editOperationId, version } = req.body;
+
+    // 1. Recuperar venta original
+    const venta = await Venta.findById(req.params.id).session(session);
     if (!venta) {
-      return res.status(404).json({
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ success: false, message: 'Venta no encontrada' });
+    }
+
+    // 2. Generar operationId si no se proporciona
+    const effectiveOperationId = editOperationId || uuidv4();
+
+    // 3. Validar idempotencia
+    const existingMovement = await InventoryMovement.findOne({ operationId: effectiveOperationId }).session(session);
+
+    if (existingMovement) {
+      const operationRecord = venta.operationHistory?.find(op => op.operationId === effectiveOperationId);
+
+      if (!operationRecord) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(500).json({ success: false, message: 'Inconsistencia detectada en historial de operaciones' });
+      }
+
+      if (venta.version !== operationRecord.version) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(409).json({
+          success: false,
+          message: 'La venta fue modificada después de esta operación. Por favor recargue y vuelva a intentar.',
+          currentVersion: venta.version,
+          operationVersion: operationRecord.version
+        });
+      }
+
+      await session.abortTransaction();
+      session.endSession();
+      return res.json({ success: true, data: venta, cached: true });
+    }
+
+    // 4. Validar versión (si se proporciona)
+    if (version !== undefined && version !== venta.version) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(409).json({
         success: false,
-        message: 'Venta no encontrada'
+        message: 'La venta fue modificada por otro usuario',
+        currentVersion: venta.version,
+        requestedVersion: version
       });
     }
 
@@ -966,15 +974,19 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     if (hasSensitiveFields) {
       if (req.user.role !== 'admin') {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(403).json({
           success: false,
           message: 'No tienes permiso para modificar campos financieros de la venta'
         });
       }
       
-      // Validar relación cliente-mascota si se modifica
+      // Validación de relación cliente-mascota si se modifica
       if (mascota !== undefined && customer !== undefined) {
         if (mascota && !customer) {
+          await session.abortTransaction();
+          session.endSession();
           return res.status(400).json({
             success: false,
             message: 'Si se selecciona una mascota, debe seleccionar un cliente'
@@ -982,8 +994,10 @@ router.put('/:id', authenticateToken, async (req, res) => {
         }
 
         if (mascota) {
-          const mascotaDoc = await Mascota.findById(mascota);
+          const mascotaDoc = await Mascota.findById(mascota).session(session);
           if (!mascotaDoc) {
+            await session.abortTransaction();
+            session.endSession();
             return res.status(404).json({
               success: false,
               message: 'Mascota no encontrada'
@@ -991,6 +1005,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
           }
 
           if (!mascotaDoc.owner || mascotaDoc.owner.toString() !== customer) {
+            await session.abortTransaction();
+            session.endSession();
             return res.status(403).json({
               success: false,
               message: 'La mascota no pertenece al cliente seleccionado'
@@ -1005,7 +1021,9 @@ router.put('/:id', authenticateToken, async (req, res) => {
         for (const item of items) {
           if (item.type === 'servicio') {
             if (!item.mascota) {
-              const servicio = await Servicio.findById(item.item);
+              const servicio = await Servicio.findById(item.item).session(session);
+              await session.abortTransaction();
+              session.endSession();
               return res.status(400).json({
                 success: false,
                 message: `El servicio "${servicio ? servicio.name : 'desconocido'}" debe tener una mascota asociada`
@@ -1014,6 +1032,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
             // Validar que la mascota pertenezca al cliente
             if (!customer && !venta.customer) {
+              await session.abortTransaction();
+              session.endSession();
               return res.status(400).json({
                 success: false,
                 message: 'Para vender servicios debe seleccionar un cliente'
@@ -1021,8 +1041,10 @@ router.put('/:id', authenticateToken, async (req, res) => {
             }
 
             const effectiveCustomer = customer || venta.customer;
-            const mascotaDoc = await Mascota.findById(item.mascota);
+            const mascotaDoc = await Mascota.findById(item.mascota).session(session);
             if (!mascotaDoc) {
+              await session.abortTransaction();
+              session.endSession();
               return res.status(404).json({
                 success: false,
                 message: 'Mascota no encontrada'
@@ -1030,6 +1052,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
             }
 
             if (!mascotaDoc.owner || mascotaDoc.owner.toString() !== effectiveCustomer.toString()) {
+              await session.abortTransaction();
+              session.endSession();
               return res.status(403).json({
                 success: false,
                 message: `La mascota "${mascotaDoc.name}" no pertenece al cliente seleccionado`
@@ -1038,72 +1062,29 @@ router.put('/:id', authenticateToken, async (req, res) => {
           }
         }
 
-        // Guardar items originales para ajustar inventario
-        const originalItems = venta.items;
+        // 6. Si se modifican items, procesar FIFO
+        if (items) {
+          // 6.1 Revertir FIFO original
+          await revertirFIFOEnVenta(venta._id, effectiveOperationId, req.user._id, session);
 
-        // Devolver stock de items originales (solo productos)
-        for (const originalItem of originalItems) {
-          if (originalItem.type === 'producto') {
-            const producto = await Producto.findById(originalItem.item);
-            if (producto) {
-              producto.stock += originalItem.quantity;
-              await producto.save();
-            }
-          }
-        }
+          // 6.2 Validar sincronización después de revertir
+          await validarSincronizacionStockCapas(venta._id, session);
 
-        // Verificar stock disponible para nuevos items
-        for (const newItem of items) {
-          if (newItem.type === 'producto') {
-            const producto = await Producto.findById(newItem.item);
-            if (!producto) {
-              // Si no existe producto, revertir stock y rechazar
-              for (const originalItem of originalItems) {
-                if (originalItem.type === 'producto') {
-                  const prod = await Producto.findById(originalItem.item);
-                  if (prod) {
-                    prod.stock -= originalItem.quantity;
-                    await prod.save();
-                  }
-                }
-              }
-              return res.status(404).json({
-                success: false,
-                message: `Producto con ID ${newItem.item} no encontrado`
-              });
-            }
+          // 6.3 Consumir nuevo estado FIFO
+          await consumirFIFOEnVenta(items, venta._id, venta.date, req.user._id, effectiveOperationId, session);
 
-            if (producto.stock < newItem.quantity) {
-              // Si no hay suficiente stock, revertir stock y rechazar
-              for (const originalItem of originalItems) {
-                if (originalItem.type === 'producto') {
-                  const prod = await Producto.findById(originalItem.item);
-                  if (prod) {
-                    prod.stock -= originalItem.quantity;
-                    await prod.save();
-                  }
-                }
-              }
-              return res.status(400).json({
-                success: false,
-                message: `Stock insuficiente para ${producto.name}. Stock disponible: ${producto.stock}`
-              });
-            }
+          // 6.4 Validar sincronización después de consumir
+          await validarSincronizacionStockCapas(venta._id, session);
+
+          // 6.5 Si cambia de servicio o mascota, procesar historial médico y carnet
+          if (mascota !== undefined || items !== undefined) {
+            await revertirHistorialMedicoYCarnet(venta._id, effectiveOperationId, session);
+            await actualizarHistorialMedicoYCarnet(venta, items, effectiveOperationId, session);
           }
+
+          // 7. Actualizar campos de venta
+          venta.items = items;
         }
-        
-        // Descontar stock de nuevos items
-        for (const newItem of items) {
-          if (newItem.type === 'producto') {
-            const producto = await Producto.findById(newItem.item);
-            if (producto) {
-              producto.stock -= newItem.quantity;
-              await producto.save();
-            }
-          }
-        }
-        
-        venta.items = items;
       }
       if (paymentMethod !== undefined) venta.paymentMethod = paymentMethod;
       if (saleChannel !== undefined) venta.saleChannel = saleChannel;
@@ -1165,12 +1146,16 @@ router.put('/:id', authenticateToken, async (req, res) => {
         // Validar que cada pago tenga method y amount
         for (const payment of payments) {
           if (!payment.method || !['efectivo', 'tarjeta', 'transferencia'].includes(payment.method)) {
+            await session.abortTransaction();
+            session.endSession();
             return res.status(400).json({
               success: false,
               message: 'Método de pago inválido. Debe ser: efectivo, tarjeta o transferencia'
             });
           }
           if (payment.amount === undefined || payment.amount < 0) {
+            await session.abortTransaction();
+            session.endSession();
             return res.status(400).json({
               success: false,
               message: 'El monto de pago debe ser un número positivo'
@@ -1189,6 +1174,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
           // Con efectivo, permitir sobrepago (el excedente será el cambio)
           if (totalPayments < venta.total - tolerance) {
             const missing = venta.total - totalPayments;
+            await session.abortTransaction();
+            session.endSession();
             return res.status(400).json({
               success: false,
               message: `Faltan $${missing.toFixed(2)} para completar el pago`
@@ -1197,6 +1184,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
         } else {
           // Sin efectivo, el pago debe ser exacto
           if (Math.abs(totalPayments - venta.total) > tolerance) {
+            await session.abortTransaction();
+            session.endSession();
             return res.status(400).json({
               success: false,
               message: `La suma de pagos ($${totalPayments.toFixed(2)}) no coincide con el total de la venta ($${venta.total.toFixed(2)})`
@@ -1222,34 +1211,42 @@ router.put('/:id', authenticateToken, async (req, res) => {
             venta.change = calculatedChange;
           }
         }
-      }
+
+      // 10. Actualizar campos de idempotencia
+      venta.version = (venta.version || 0) + 1;
+      venta.lastEditOperationId = effectiveOperationId;
+      venta.operationHistory = venta.operationHistory || [];
+      venta.operationHistory.push({
+        operationId: effectiveOperationId,
+        version: venta.version,
+        timestamp: new Date(),
+        userId: req.user._id
+      });
     }
 
-    // Cualquier usuario puede modificar status y notas
+    // 11. Campos no sensibles (cualquier usuario)
     if (status) venta.status = status;
     if (notes !== undefined) venta.notes = notes;
 
-    await venta.save();
+    // 12. Guardar venta
+    await venta.save({ session });
+
+    // 13. Commit de la transacción
+    await session.commitTransaction();
+    session.endSession();
+
+    // 14. Responder
     await venta.populate('customer', 'name phone');
     await venta.populate('mascota', 'name type breed');
     await venta.populate('user', 'name');
-    
-    // Populate items manualmente según el tipo
-    for (const item of venta.items) {
-      if (item.type === 'producto') {
-        const producto = await Producto.findById(item.item).select('name price');
-        item.item = producto || { name: 'Producto no disponible', price: 0 };
-      } else if (item.type === 'servicio') {
-        const servicio = await Servicio.findById(item.item).select('name price');
-        item.item = servicio || { name: 'Servicio no disponible', price: 0 };
-      }
-    }
 
     res.json({
       success: true,
       data: venta
     });
   } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
     console.error(error);
     res.status(500).json({
       success: false,

@@ -22,6 +22,7 @@ const carnetVacunacionRoutes = require('./routes/carnetVacunacion');
 const categoriaServicioRoutes = require('./routes/categoriasServicio');
 const vacunaRoutes = require('./routes/vacunas');
 const clasificacionVacunaRoutes = require('./routes/clasificacionesVacunas');
+const inventarioRoutes = require('./routes/inventario');
 
 // Import middleware
 const { authenticateToken, requireAdmin } = require('./middleware/auth');
@@ -74,6 +75,7 @@ app.use('/api/carnet-vacunacion', carnetVacunacionRoutes);
 app.use('/api/categorias-servicio', categoriaServicioRoutes);
 app.use('/api/vacunas', vacunaRoutes);
 app.use('/api/clasificaciones-vacunas', clasificacionVacunaRoutes);
+app.use('/api/inventario', inventarioRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

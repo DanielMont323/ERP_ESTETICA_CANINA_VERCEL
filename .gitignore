@@ -11,6 +11,14 @@ frontend/node_modules/.cache/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.test
+.env.test-put
+.env.readonly
+.env.*
+!.env.example
+
+# Scripts de prueba antiguos deshabilitados (contienen credenciales; no versionar)
+backend/_scripts-deshabilitados/
 
 # Logs
 npm-debug.log*

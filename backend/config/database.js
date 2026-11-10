@@ -5,6 +5,8 @@ const connectDB = async () => {
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
+      autoIndex: process.env.NODE_ENV === 'test', // Solo crear índices automáticamente en pruebas
+      autoCreate: process.env.NODE_ENV === 'test', // Solo crear colecciones automáticamente en pruebas
     });
 
     console.log(`MongoDB Connected: ${conn.connection.host}`);

@@ -107,7 +107,7 @@ const compraSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pendiente', 'pagada', 'vencida', 'cancelada'],
+    enum: ['pendiente', 'pagada', 'vencida', 'cancelada', 'modificando'],
     default: function() {
       return this.type === 'contado' ? 'pagada' : 'pendiente';
     }
@@ -123,6 +123,23 @@ const compraSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  idempotencyKey: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  lastModificationIdempotencyKey: {
+    type: String,
+    sparse: true
+  },
+  modificationIdempotencyKeys: [{
+    key: String,
+    version: Number,
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   notes: {
     type: String,
     trim: true
@@ -135,6 +152,21 @@ const compraSchema = new mongoose.Schema({
   date: {
     type: Date,
     default: getCurrentDateGMT7
+  },
+  version: {
+    type: Number,
+    default: 1
+  },
+  previousVersion: {
+    type: Number
+  },
+  lockToken: {
+    type: String,
+    sparse: true
+  },
+  lockExpiresAt: {
+    type: Date,
+    sparse: true
   }
 });
 

@@ -188,7 +188,29 @@ const ventaSchema = new mongoose.Schema({
   date: {
     type: Date,
     default: getCurrentDateGMT7
-  }
+  },
+  // Campos de idempotencia para PUT FIFO
+  version: {
+    type: Number,
+    default: 0,
+    index: true
+  },
+  editOperationId: {
+    type: String,
+    index: true
+  },
+  lastEditOperationId: {
+    type: String
+  },
+  operationHistory: [{
+    operationId: String,
+    version: Number,
+    timestamp: Date,
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Usuario'
+    }
+  }]
 });
 
 // Calcular totales antes de guardar

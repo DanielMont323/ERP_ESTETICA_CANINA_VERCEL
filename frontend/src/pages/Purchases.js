@@ -48,6 +48,7 @@ const Purchases = () => {
     ivaRate: 0.16,
     date: ''
   });
+  const [modificationIdempotencyKey, setModificationIdempotencyKey] = useState(null);
   const [currentItem, setCurrentItem] = useState({
     product: '',
     productName: '',
@@ -65,6 +66,11 @@ const Purchases = () => {
   const [editingItemIndex, setEditingItemIndex] = useState(null);
   const productSearchInputRef = useRef(null);
   const formRef = useRef(null);
+
+  // Función para generar una key única de idempotencia
+  const generateIdempotencyKey = () => {
+    return `mod-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  };
 
   // Función para reiniciar el formulario a valores iniciales
   const resetForm = () => {
@@ -96,6 +102,7 @@ const Purchases = () => {
     setProductSearchQuery('');
     setSearchResults([]);
     setEditingItemIndex(null);
+    setModificationIdempotencyKey(null);
   };
 
   // Listener para evento personalizado de F4 contextual (nueva compra)
@@ -435,6 +442,11 @@ const Purchases = () => {
         dataToSend.date = formData.date;
       }
       
+      // Agregar key de idempotencia para modificaciones (PUT)
+      if (isEditMode && modificationIdempotencyKey) {
+        dataToSend.lastModificationIdempotencyKey = modificationIdempotencyKey;
+      }
+      
       let response;
       if (isEditMode) {
         response = await purchasesAPI.update(selectedPurchase._id, dataToSend);
@@ -449,6 +461,7 @@ const Purchases = () => {
       setSelectedPurchase(null);
       setProductSearchQuery('');
       setSearchResults([]);
+      setModificationIdempotencyKey(null);
       setFormData({
         proveedor: '',
         type: 'contado',
@@ -466,6 +479,7 @@ const Purchases = () => {
     } catch (error) {
       console.error('Error al guardar compra:', error);
       console.error('Detalles del error:', error.response?.data);
+      // No limpiar la key en caso de error para permitir reintentos
       toast.error(`Error: ${error.response?.data?.message || 'Error al guardar compra'}`);
     }
   };
@@ -473,6 +487,9 @@ const Purchases = () => {
   const handleEditClick = (purchase) => {
     setSelectedPurchase(purchase);
     setIsEditMode(true);
+    
+    // Generar nueva key de idempotencia para esta modificación
+    setModificationIdempotencyKey(generateIdempotencyKey());
     
     // Procesar items para asegurar que tengan productName
     const processedItems = (purchase.items || []).map(item => ({

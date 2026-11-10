@@ -34,6 +34,10 @@ const vacunaSchema = new mongoose.Schema({
   venta: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Venta'
+  },
+  replacedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CarnetVacunacion'
   }
 });
 

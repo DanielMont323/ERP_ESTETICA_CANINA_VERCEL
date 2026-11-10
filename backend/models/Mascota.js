@@ -60,6 +60,9 @@ const mascotaSchema = new mongoose.Schema({
     cost: {
       type: Number,
       min: 0
+    },
+    replacedBy: {
+      type: mongoose.Schema.Types.ObjectId
     }
   }],
   vaccinations: [{

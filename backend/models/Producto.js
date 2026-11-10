@@ -90,6 +90,15 @@ const productoSchema = new mongoose.Schema({
     min: 0,
     description: 'Días antes de la caducidad para mostrar alerta'
   },
+  fifoInitialized: {
+    type: Boolean,
+    default: false,
+    description: 'Indica si el producto ha sido inicializado en el sistema FIFO'
+  },
+  fifoInitializationDate: {
+    type: Date,
+    description: 'Fecha en que se inicializó el inventario FIFO de este producto'
+  },
   createdAt: {
     type: Date,
     default: Date.now
