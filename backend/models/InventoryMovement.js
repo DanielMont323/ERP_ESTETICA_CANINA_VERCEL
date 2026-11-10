@@ -127,10 +127,11 @@ const inventoryMovementSchema = new mongoose.Schema({
     index: true,
     default: null
   },
+  // F17: sin "default: null". Un índice único sparse solo ignora documentos SIN el campo;
+  // con null, el segundo movimiento sin movementId fallaba con E11000.
   movementId: {
     type: String,
-    index: { unique: true, sparse: true },
-    default: null
+    index: { unique: true, sparse: true }
   },
   operationBatchId: {
     type: String,

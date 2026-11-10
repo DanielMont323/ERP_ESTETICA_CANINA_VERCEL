@@ -2,6 +2,13 @@ const InventoryLayer = require('../models/InventoryLayer');
 const InventoryMovement = require('../models/InventoryMovement');
 const Producto = require('../models/Producto');
 
+// Error de inventario con el estado HTTP que debe recibir el cliente (lo usa la ruta de ventas).
+function fifoError(message, httpStatus) {
+  const error = new Error(message);
+  error.httpStatus = httpStatus;
+  return error;
+}
+
 /**
  * Función reutilizable para consumo FIFO en ventas
  * Agrupa consumos por producto, valida disponibilidad, consume capas FIFO y crea movimientos
@@ -63,7 +70,7 @@ async function consumirFIFOEnVenta(items, ventaId, ventaDate, userId, operationI
 
       const producto = await Producto.findById(productoId).session(session);
       if (!producto) {
-        throw new Error(`Producto con ID ${productoId} no encontrado`);
+        throw fifoError(`Producto con ID ${productoId} no encontrado`, 404);
       }
 
       const activeLayers = await InventoryLayer.find({
@@ -76,11 +83,11 @@ async function consumirFIFOEnVenta(items, ventaId, ventaDate, userId, operationI
 
       // Validación de sincronía: producto.stock debe igualar suma de remainingQuantity de capas activas
       if (Math.abs(producto.stock - totalRemaining) > 0.01) {
-        throw new Error(`Inconsistencia detectada para producto ${producto.name}. Stock: ${producto.stock}, Capas: ${totalRemaining}. Contacte al administrador.`);
+        throw fifoError(`Inconsistencia detectada para producto ${producto.name}. Stock: ${producto.stock}, Capas: ${totalRemaining}. Contacte al administrador.`, 409);
       }
 
       if (totalRemaining < cantidadRequerida) {
-        throw new Error(`Stock insuficiente para ${producto.name}. Disponible: ${totalRemaining}, Solicitado: ${cantidadRequerida}`);
+        throw fifoError(`Stock insuficiente para ${producto.name}. Disponible: ${totalRemaining}, Solicitado: ${cantidadRequerida}`, 400);
       }
     }
 

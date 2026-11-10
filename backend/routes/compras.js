@@ -371,7 +371,9 @@ router.post('/', authenticateToken, async (req, res) => {
       invoice,
       earlyPaymentDiscount,
       discountDeadline,
-      idempotencyKey: idempotencyKey || null,
+      // F16: guardar null chocaba con el índice único sparse (la 2ª compra sin clave daba E11000).
+      // Si no hay clave, el campo se omite.
+      ...(idempotencyKey && { idempotencyKey }),
       // Usar fecha personalizada si se proporciona, si no usa el default del modelo
       ...(date && { date: parseCalendarDate(date) })
     }], { session });

@@ -556,6 +556,11 @@ router.post('/', authenticateToken, async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
 
+    // F18: declarada fuera del try para que el código posterior al commit (historial del
+    // cliente, populate y respuesta) pueda usarla. Antes daba ReferenceError → 500 con la
+    // venta YA guardada.
+    let ventaDoc;
+
     try {
       // 5. Crear venta (dentro de la transacción)
       const venta = await Venta.create([{
@@ -577,7 +582,7 @@ router.post('/', authenticateToken, async (req, res) => {
         ...(saleChannel === 'mercado_libre' && total !== undefined && { total }),
         ...(saleChannel === 'mercado_libre' && netIncome !== undefined && { netIncome })
       }], { session });
-      const ventaDoc = venta[0];
+      ventaDoc = venta[0];
 
       // 5.5. Validar que los pagos coincidan con el total (si se usó payments[])
       if (effectivePayments.length > 0) {
@@ -642,7 +647,8 @@ router.post('/', authenticateToken, async (req, res) => {
       }
 
       // 7. Consumir capas FIFO usando función auxiliar
-      await consumirFIFOEnVenta(items, ventaDoc._id, ventaDoc.date, req.user._id, session);
+      // F1: antes faltaba operationId y la sesión llegaba en su lugar (consumo fuera de la transacción).
+      await consumirFIFOEnVenta(items, ventaDoc._id, ventaDoc.date, req.user._id, uuidv4(), session);
 
       // 8. Registrar servicios en el historial médico de las mascotas (dentro de la transacción)
       for (const item of items) {
@@ -891,14 +897,22 @@ router.post('/', authenticateToken, async (req, res) => {
       data: ventaDoc
     });
     } catch (error) {
-      await session.abortTransaction();
-      session.endSession();
+      // F15: este catch externo no tiene acceso a "session" (declarada dentro del try) y antes
+      // lanzaba ReferenceError, dejando la petición sin respuesta. El catch interno ya aborta
+      // y cierra la transacción antes de relanzar el error.
       console.error(error);
       if (error.name === 'ValidationError') {
         const messages = Object.values(error.errors).map(val => val.message);
         return res.status(400).json({
           success: false,
           message: messages.join(', ')
+        });
+      }
+      // Errores de inventario FIFO con estado HTTP explícito (stock insuficiente, inconsistencia)
+      if (error.httpStatus) {
+        return res.status(error.httpStatus).json({
+          success: false,
+          message: error.message
         });
       }
       res.status(500).json({
@@ -1211,6 +1225,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
             venta.change = calculatedChange;
           }
         }
+      } // cierre de "if (payments !== undefined && payments.length > 0)" (faltaba: SyntaxError)
 
       // 10. Actualizar campos de idempotencia
       venta.version = (venta.version || 0) + 1;
