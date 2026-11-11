@@ -214,3 +214,21 @@ Evidencia del costo: en la copia, de 75 productos con stock y compra registrada,
 Ejecución en la **copia local** (vía API, como se haría en producción): 3.7 s; 405 productos: 354 abiertos, 51 omitidos, 0 fallidos; sin costo: "Casco para mascota" y "Producto Test Rollback" (dato de prueba). Valor de apertura: 1,876 unidades, **$124,829.29** a costo capturado (estimado). Verificación de consistencia stock vs. capas: 404 productos, 0 inconsistencias. En pantalla: "Alfadex polvo" (antes rechazado) se vendió; costo de venta $48.75 desde la capa de apertura.
 
 Resultado automático: 75 pruebas — **75 pasan**.
+
+# Revisión de producción, solo lectura (2026-11-11)
+
+| Punto | Estado |
+|---|---|
+| Servidor | MongoDB 8.0.37, replica set Atlas → transacciones OK |
+| Backend | Proceso continuo (Procfile), no serverless: la apertura FIFO no tiene límite de 10 s |
+| Datos nuevos desde el respaldo del 10/11 | ventas 547, compras 45, clientes 259, mascotas 330, carnets 325, cuentas por pagar 1 → **hace falta respaldo nuevo antes de desplegar** |
+| FIFOInitialization | `failed`, 2 intentos, lock libre → el código nuevo puede reintentar |
+| Capas / movimientos | 0 / 0 |
+| Productos | 405 activos; 357 con stock (1,896 u.); 10 `fifoInitialized` sin capas; sin stock negativo ni decimal |
+| Sin costo con stock | "Casco para mascota" (1) y "Producto Test Rollback" (10) |
+| **Productos de prueba** | 14 (SKU TEST-/CORR-TEST/FINAL-TEST), 170 u., **$12,750** a costo; 0 ventas y 0 compras; + 2 proveedores "Test" sin compras |
+| Índices faltantes (autoIndex está apagado en producción) | inventorymovements: `movementId` único sparse, `operationId`, `operationBatchId`; ventas: `version`, `editOperationId`; inventorylayers: `purchase`. Sin duplicados que impidan crearlos. Sobra `compra_1` (inofensivo) |
+| Corrección de fechas pendiente | 440 ventas +7 h, 22 ventas −1 h, 432 entradas de historial médico |
+| Compras con IVA sin marcar "incluido" | 32 items (riesgo de doble IVA, pendiente) |
+
+**Veredicto: todavía no está lista.** Es compatible (transacciones, sin conflictos de índices), pero antes de desplegar hacen falta pasos que modifican producción y requieren autorización.
