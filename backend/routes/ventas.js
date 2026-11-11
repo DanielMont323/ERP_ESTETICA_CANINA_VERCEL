@@ -19,6 +19,18 @@ const { revertirHistorialMedicoYCarnet } = require('../helpers/revertirHistorial
 const { actualizarHistorialMedicoYCarnet } = require('../helpers/actualizarHistorialMedicoYCarnet');
 const router = express.Router();
 
+// true si ambas listas tienen los mismos artículos (tipo + id) con las mismas cantidades,
+// sin importar el orden. Precios y descuentos no cuentan: no mueven inventario.
+function mismosArticulos(actuales = [], nuevos = []) {
+  const clave = it => `${it.type}:${String(it.item && it.item._id ? it.item._id : it.item)}`;
+  const contar = lista => lista.reduce((m, it) => m.set(clave(it), (m.get(clave(it)) || 0) + Number(it.quantity)), new Map());
+  const a = contar(actuales);
+  const b = contar(nuevos);
+  if (a.size !== b.size) return false;
+  for (const [k, q] of a) if (b.get(k) !== q) return false;
+  return true;
+}
+
 // @route   GET /api/ventas
 // @desc    Obtener todas las ventas
 router.get('/', async (req, res) => {
@@ -1094,15 +1106,20 @@ router.put('/:id', authenticateToken, async (req, res) => {
         if (items) {
           // F5: una venta anterior a FIFO no tiene movimientos que revertir; consumir de nuevo
           // descontaría el inventario dos veces. Sus artículos no se pueden modificar.
-          if (!venta.fifoTracked) {
+          // La pantalla de edición siempre reenvía los artículos; si son los mismos productos y
+          // cantidades no hay movimiento de inventario y se permite editar lo demás.
+          if (!venta.fifoTracked && !mismosArticulos(venta.items, items)) {
             await session.abortTransaction();
             session.endSession();
             return res.status(409).json({
               success: false,
-              message: 'Esta venta es anterior al control FIFO de inventario. No se pueden modificar sus productos o servicios; solo estado y notas.'
+              message: 'Esta venta es anterior al control FIFO de inventario. No se pueden cambiar sus productos, servicios o cantidades; sí se pueden editar precios, pagos y notas.'
             });
           }
-
+        }
+        if (items && !venta.fifoTracked) {
+          venta.items = items;
+        } else if (items) {
           // 6.1 Revertir FIFO original
           await revertirFIFOEnVenta(venta._id, effectiveOperationId, req.user._id, session, 'edicion_venta');
 

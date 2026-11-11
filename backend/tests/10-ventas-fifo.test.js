@@ -119,6 +119,20 @@ describe('F5 — editar una venta anterior a FIFO', () => {
     if (res.status >= 400) expect(s).toMatchObject({ stock: 8, capas: 8 });
     else expect(s).toMatchObject({ stock: 7, capas: 7 });
   });
+
+  test('la pantalla reenvía los mismos artículos: editar notas y precio se permite sin mover inventario', async () => {
+    const p = await h.producto({ stock: 8, fifoInitialized: true });
+    await InventoryLayer.create({ producto: p._id, quantity: 8, initialQuantity: 8, remainingQuantity: 8, unitCost: 50, totalCost: 400, source: 'inventario_inicial', isInitialLayer: true, receivedDate: new Date() });
+    const legacy = await Venta.create({ items: [linea(p, 2)], paymentMethod: 'efectivo', saleChannel: 'local', status: 'completada' });
+    const res = await h.request(h.app).put(`/api/ventas/${legacy._id}`).set(h.auth(admin.token))
+      .send({ items: [{ ...linea(p, 2), unitPrice: 120 }], notes: 'editada', status: 'completada' });
+    expect(res.status).toBe(200);
+    const v = await Venta.findById(legacy._id);
+    expect(v.notes).toBe('editada');
+    expect(v.total).toBe(240);
+    expect(await h.stockYCapas(p._id)).toMatchObject({ stock: 8, capas: 8 });
+    expect(await h.models.InventoryMovement.countDocuments({ sourceId: legacy._id })).toBe(0);
+  });
 });
 
 describe('F6 — reparto entre varias líneas del mismo producto', () => {

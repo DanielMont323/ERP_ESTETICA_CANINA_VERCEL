@@ -112,3 +112,37 @@ Nota: los 10 productos de producción con `fifoInitialized:true` y sin capas que
 Decisión pendiente: los permisos por rol (p. ej. si un usuario no admin puede ver costos y reportes) no se cambiaron; S2 solo exige sesión.
 
 Resultado: 49 pruebas — **49 pasan, 0 fallan**.
+
+# Prueba en la interfaz real (2026-11-11)
+
+Frontend local (3055) + backend local (5055) contra la copia `estetica-canica-test`. Usuarios de prueba en `backend/.env.ui-test`.
+Recorrido con producto nuevo "PRUEBA FIFO Shampoo UI" (SKU PRUEBA-FIFO-UI), verificando base de datos tras cada paso.
+
+| Paso | Resultado |
+|---|---|
+| Compra 2 × $116 IVA incluido | OK: stock 2, capa a $116 con proveedor, entrada $232 |
+| Editar compra a 3 piezas | OK: capa vieja inactiva, reversión $232, capa nueva 3 × $116 |
+| Venta de 1 | OK: stock 2 |
+| Cancelar compra con mercancía vendida | OK: bloqueada con mensaje claro |
+| Editar venta a 2 piezas | OK en inventario (reversión 1, salida 2) |
+| Cancelar venta | OK: stock 3, capa completa |
+| Producto FIFO: cambiar stock a 10 | OK: rechazado, mensaje claro en pantalla |
+| Producto FIFO: cambiar solo precio | OK: guardado, stock intacto |
+| Cancelar compra sin ventas vigentes | OK: una sola reversión de 3, stock 0 |
+| Venta histórica: cambiar cantidad | OK: rechazada |
+| Venta histórica: editar solo notas | **Fallaba (regresión de F5)**: la pantalla siempre reenvía los artículos. Corregido: si productos y cantidades no cambian se permite editar precios, pagos y notas sin mover inventario. Prueba agregada |
+| Usuario normal | No ve editar/cancelar en ventas ni compras. Sí puede crear compras y ve Costos, Reportes y Cuentas por pagar |
+| Vender producto con stock y sin capas FIFO | Rechazado: "Inconsistencia… Stock: 1, Capas: 0" |
+
+**Bloqueante para desplegar:** en producción casi ningún producto tiene capas FIFO (la inicialización falló). Con este código, esos productos no se podrían vender. Antes de desplegar hay que ejecutar y validar la inicialización FIFO.
+
+Hallazgos previos (no causados por estos cambios), pendientes:
+- Fechas en UTC: una compra registrada después de las 5 pm aparece con el día siguiente y **no se puede editar** sin corregir la fecha (el formulario la rechaza como fecha futura). Afecta también la agrupación por día de los reportes.
+- Editar una venta: al cambiar la cantidad la pantalla no recalcula total ni pagos; el servidor guarda total $400 con pagos $200 sin validar que cuadren.
+- Lista de compras: columna IVA muestra $0.00 en compras con IVA incluido.
+- Nuevo producto: dice que el SKU se genera solo, pero lo exige.
+- Catálogo de vacunas: usuario normal recibe 403 (ruta solo admin desde antes).
+- Falta `frontend/public/portada.jpg` (fondo del login).
+- "Costo" del producto ($100 capturado) difiere del costo FIFO real ($116): la rentabilidad no debe usar `Producto.cost`.
+
+Resultado automático: 50 pruebas — **50 pasan**.
