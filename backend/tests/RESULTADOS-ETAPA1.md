@@ -232,3 +232,12 @@ Resultado automático: 75 pruebas — **75 pasan**.
 | Compras con IVA sin marcar "incluido" | 32 items (riesgo de doble IVA, pendiente) |
 
 **Veredicto: todavía no está lista.** Es compatible (transacciones, sin conflictos de índices), pero antes de desplegar hacen falta pasos que modifican producción y requieren autorización.
+
+# Preparación de producción (2026-11-11, autorizada por el usuario)
+
+1. **Respaldo** `Documents\respaldos-erp\estetica-canica-2026-11-11-predespliegue`: 20 colecciones, 2,228 documentos, EJSON canónico + MANIFEST con sha256; verificado (re-lectura y hash 20/20).
+2. **Datos de prueba desactivados** (`migraciones/2026-11-desactivar-datos-prueba.js`): 14 productos (SKU TEST-/CORR-TEST/FINAL-TEST) y 2 proveedores "Proveedor Test …" → `isActive:false`. Sin borrar, stock intacto (170 u.), ninguno tenía ventas/compras/capas. Log con los _id para revertir.
+3. **Índices creados** (no modifican datos): inventorymovements `operationId_1`, `movementId_1` (único sparse), `operationBatchId_1`; ventas `version_1`, `editOperationId_1`; inventorylayers `purchase_1`. Verificado: el código actual de producción (`main`) no tiene FIFO, así que no escribe movimientos y el índice único no lo afecta.
+4. **Verificación final:** 0 índices faltantes; 391 productos activos, 345 con stock (1,726 u., $115,367.06 a costo capturado); sin costo: solo "Casco para mascota".
+
+Pendiente para el día del despliegue (requiere el código nuevo en producción): corrección de fechas (440 + 22 ventas, 432 historial médico) y apertura FIFO. Pendiente del usuario: capturar el costo de "Casco para mascota".
