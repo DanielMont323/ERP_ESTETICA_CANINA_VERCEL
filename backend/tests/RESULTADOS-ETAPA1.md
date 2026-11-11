@@ -81,3 +81,19 @@ Pendientes: F7, F8, F9, F10 (compras), F12 (stock fuera de FIFO), S1, S2 (permis
 
 Riesgo detectado sin corregir (F19): `PUT /api/ventas/:id` permite a cualquier usuario autenticado
 poner `status: 'cancelada'` sin devolver inventario (no pasa por la lógica de cancelación).
+
+---
+
+# Etapa 2 — Compras con FIFO (2026-11-10)
+
+| Id | Archivo | Cambio |
+|---|---|---|
+| F8 | `routes/compras.js` | `normalizarItemCompra`: el PUT recalcula `baseUnitCost` desde `unitCost` con la misma regla de IVA que el POST. La reversión se valora al costo de la capa original |
+| F7 | `routes/compras.js` | La capa nueva del PUT usa la fecha de la compra y guarda el proveedor; el movimiento lleva fecha y usuario |
+| F9 | `routes/compras.js` (DELETE) | Solo se revierten las capas activas |
+| F10 | `models/InventoryLayer.js`, `routes/compras.js` | Índice sobre `purchase`; `capaTieneConsumoVigente` busca por `layersConsumed.layer` y descuenta salidas ya revertidas |
+
+Sin cambios: el PUT de compras anteriores a FIFO (sin capas) conserva su lógica original.
+
+Resultado: 36 pruebas — **26 pasan, 10 fallan**. Todas las de ventas y compras pasan.
+Pendientes: F12 (stock fuera de FIFO), S1, S2 (permisos), F19 (cancelar venta por PUT).

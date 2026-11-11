@@ -112,7 +112,8 @@ const inventoryLayerSchema = new mongoose.Schema({
 // Orden determinista: receivedDate ascendente, _id ascendente como tie-breaker
 inventoryLayerSchema.index({ producto: 1, receivedDate: 1, _id: 1, isActive: 1 });
 inventoryLayerSchema.index({ producto: 1, isExhausted: 1 });
-inventoryLayerSchema.index({ compra: 1 });
+// F10: el campo real es "purchase" (antes el índice apuntaba a "compra", que no existe).
+inventoryLayerSchema.index({ purchase: 1 });
 inventoryLayerSchema.index({ source: 1 });
 
 // Índice único para impedir duplicados de capa inicial por producto

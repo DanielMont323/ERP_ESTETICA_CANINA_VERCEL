@@ -17,6 +17,65 @@ const router = express.Router();
 const { parseCalendarDate } = require('../helpers/timezone');
 
 // ============================================================================
+// HELPERS FIFO DE COMPRAS
+// ============================================================================
+
+// F8: normaliza un item recibido en PUT con la misma regla de IVA que POST.
+// Antes se conservaba el baseUnitCost enviado (el del item original) aunque cambiara unitCost,
+// y la capa FIFO se calculaba con el costo viejo.
+const normalizarItemCompra = (item) => {
+  const taxRate = item.taxRate !== undefined ? Number(item.taxRate) : 0.16;
+  const costIncludesTax = item.costIncludesTax === true;
+  const hasTax = item.hasTax !== undefined ? item.hasTax : true;
+  const precioCapturado = item.unitCost !== undefined && item.unitCost !== null ? Number(item.unitCost) : undefined;
+
+  let baseUnitCost;
+  let unitCost;
+  if (precioCapturado !== undefined && costIncludesTax) {
+    baseUnitCost = precioCapturado / (1 + (taxRate || 0.16));
+    unitCost = precioCapturado;
+  } else if (precioCapturado !== undefined) {
+    baseUnitCost = precioCapturado;
+    unitCost = precioCapturado;
+  } else {
+    // Compatibilidad: items antiguos sin unitCost
+    baseUnitCost = Number(item.baseUnitCost ?? item.cost ?? 0);
+    unitCost = baseUnitCost;
+  }
+
+  return {
+    ...item,
+    baseUnitCost,
+    unitCost,
+    quantity: item.quantity || 1,
+    discountPercentage: item.discountPercentage || 0,
+    hasTax,
+    taxRate,
+    costIncludesTax
+  };
+};
+
+// Costo FIFO por item (fórmula aprobada en POST): (base × cantidad − descuento) + IVA si aplica
+const costoFifoItem = (item) => {
+  const baseSubtotal = item.quantity * item.baseUnitCost;
+  const subtotalNeto = baseSubtotal - baseSubtotal * ((item.discountPercentage || 0) / 100);
+  const itemTax = (item.hasTax !== false) ? subtotalNeto * (item.taxRate || 0.16) : 0;
+  const total = subtotalNeto + itemTax;
+  return { total, unitario: total / item.quantity };
+};
+
+// F10: ¿la capa tiene consumos de salida vigentes (no revertidos)?
+// Antes se buscaba por "layersConsumed.layerId" (campo inexistente) y nunca encontraba nada.
+const capaTieneConsumoVigente = async (layerId, session) => {
+  const salidas = await InventoryMovement.find({ type: 'salida', 'layersConsumed.layer': layerId })
+    .select('_id').session(session);
+  if (salidas.length === 0) return false;
+  const revertidas = await InventoryMovement.countDocuments({ originalMovement: { $in: salidas.map(s => s._id) } })
+    .session(session);
+  return revertidas < salidas.length;
+};
+
+// ============================================================================
 // HELPERS PARA LOCK Y REINTENTOS
 // ============================================================================
 
@@ -1004,13 +1063,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
         // Verificar que no hay movimientos de salida asociados a capas activas
         for (const layer of activeLayers) {
-          const consumptionMovements = await InventoryMovement.find({
-            source: 'compra',
-            sourceId: compra._id,
-            layersConsumed: { $elemMatch: { layerId: layer._id } }
-          }).session(session);
-
-          if (consumptionMovements.length > 0) {
+          if (await capaTieneConsumoVigente(layer._id, session)) {
             console.log(`[PUT DEBUG] ERROR: Capa ${layer._id} tiene movimientos de consumo`);
             await session.abortTransaction();
             session.endSession();
@@ -1036,23 +1089,27 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
         };
 
         // Revertir existencias originales
-        for (const originalItem of originalItems) {
+        for (let idx = 0; idx < originalItems.length; idx++) {
+          const originalItem = originalItems[idx];
           const producto = await Producto.findById(originalItem.product).session(session);
           if (producto) {
             producto.stock -= originalItem.quantity;
             if (producto.stock < 0) producto.stock = 0;
             await producto.save({ session });
 
-            // Crear movimiento de reversión trazable
+            // F8: la reversión se valora al costo FIFO de la capa original (con IVA si aplica),
+            // no a baseUnitCost (sin IVA), para que entrada y reversión se compensen exactamente.
+            const capaOriginal = activeLayers.find(l => l.compraItemIndex === idx);
             const reversalMovement = new InventoryMovement({
               producto: originalItem.product,
               type: 'ajuste_salida',
               quantity: -originalItem.quantity,
-              unitCost: originalItem.baseUnitCost,
-              totalCost: originalItem.quantity * originalItem.baseUnitCost,
+              unitCost: capaOriginal ? capaOriginal.unitCost : originalItem.baseUnitCost,
+              totalCost: capaOriginal ? capaOriginal.unitCost * originalItem.quantity : originalItem.quantity * originalItem.baseUnitCost,
               source: 'modificacion_compra',
               sourceId: compra._id,
               sourceVersion: originalVersion,
+              user: req.user._id,
               notes: `Reversión de item por modificación de compra ${compra._id} - versión ${originalVersion}`
             });
             await reversalMovement.save({ session });
@@ -1067,16 +1124,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
         // Actualizar campos de la compra
         if (items) {
-          const normalizedItems = items.map(item => ({
-            ...item,
-            baseUnitCost: getValue(item.baseUnitCost, item.cost, item.unitCost),
-            unitCost: getValue(item.unitCost, item.cost, item.baseUnitCost),
-            quantity: item.quantity || 1,
-            discountPercentage: item.discountPercentage || 0,
-            hasTax: item.hasTax !== undefined ? item.hasTax : true,
-            taxRate: item.taxRate !== undefined ? item.taxRate : 0.16,
-            costIncludesTax: item.costIncludesTax || false
-          }));
+          const normalizedItems = items.map(normalizarItemCompra); // F8
 
           compra.items = normalizedItems;
         }
@@ -1144,13 +1192,10 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
           const itemIndex = i;
 
           // Calcular costo FIFO según fórmula aprobada
-          const baseSubtotal = item.quantity * item.baseUnitCost;
-          const discountAmount = baseSubtotal * (item.discountPercentage / 100);
-          const subtotalNeto = baseSubtotal - discountAmount;
-          const itemTax = (item.hasTax !== false) ? (subtotalNeto * (item.taxRate || 0.16)) : 0;
-          const costoTotalFIFO = subtotalNeto + itemTax;
-          const costoUnitarioFIFO = costoTotalFIFO / item.quantity;
+          const { total: costoTotalFIFO, unitario: costoUnitarioFIFO } = costoFifoItem(item);
 
+          // F7: la capa conserva la fecha de la compra (orden FIFO) y su proveedor.
+          // Antes usaba la fecha del momento de la edición y no guardaba proveedor.
           const newLayer = new InventoryLayer({
             producto: item.product,
             purchase: compra._id,
@@ -1162,8 +1207,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
             unitCost: costoUnitarioFIFO,
             totalCost: costoTotalFIFO,
             source: 'compra',
+            supplier: compra.proveedor,
             isActive: true,
-            receivedDate: new Date()
+            receivedDate: compra.date || new Date()
           });
           await newLayer.save({ session });
 
@@ -1177,7 +1223,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
             source: 'compra',
             sourceId: compra._id,
             sourceItemIndex: itemIndex,
-            sourceVersion: compra.version
+            sourceVersion: compra.version,
+            date: compra.date || new Date(),
+            user: req.user._id
           });
           await newMovement.save({ session });
         }
@@ -1435,8 +1483,12 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       });
     }
 
+    // F9: solo las capas ACTIVAS representan la versión vigente de la compra. Las inactivas
+    // ya fueron revertidas por una modificación anterior (modificacion_compra).
+    const activeLayers = layers.filter(l => l.isActive);
+
     // Compra con capas FIFO - verificar consumo
-    for (const layer of layers) {
+    for (const layer of activeLayers) {
       // Verificar si la capa ha sido consumida
       if (layer.remainingQuantity < layer.initialQuantity) {
         await session.abortTransaction();
@@ -1447,14 +1499,8 @@ router.delete('/:id', authenticateToken, async (req, res) => {
         });
       }
 
-      // Verificar si hay movimientos de salida asociados a esta capa
-      const consumptionMovements = await InventoryMovement.find({
-        source: 'compra',
-        sourceId: compra._id,
-        layersConsumed: { $elemMatch: { layerId: layer._id } }
-      }).session(session);
-
-      if (consumptionMovements.length > 0) {
+      // Verificar si hay movimientos de salida vigentes asociados a esta capa (F10)
+      if (await capaTieneConsumoVigente(layer._id, session)) {
         await session.abortTransaction();
         session.endSession();
         return res.status(400).json({
@@ -1499,8 +1545,8 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       }
     }
 
-    // Registrar movimientos de reversión trazables
-    for (const layer of layers) {
+    // Registrar movimientos de reversión trazables (F9: solo capas activas)
+    for (const layer of activeLayers) {
       const reversalMovement = new InventoryMovement({
         producto: layer.producto,
         type: 'ajuste_salida',
@@ -1509,13 +1555,14 @@ router.delete('/:id', authenticateToken, async (req, res) => {
         totalCost: layer.totalCost,
         source: 'cancelacion_compra',
         sourceId: compra._id,
+        user: req.user._id,
         notes: `Reversión de compra ${compra._id} - Capa ${layer._id}`
       });
       await reversalMovement.save({ session });
     }
 
     // Marcar capas como inactivas (canceladas)
-    for (const layer of layers) {
+    for (const layer of activeLayers) {
       layer.isActive = false;
       await layer.save({ session });
     }

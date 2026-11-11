@@ -70,3 +70,26 @@ describe('F10 — índices y verificaciones sobre campos inexistentes', () => {
     expect(keys).not.toContain('compra');
   });
 });
+
+describe('F10 — consumo vigente de capas al cancelar compras', () => {
+  const vender1 = p => h.vender(admin.token, [{ type: 'producto', item: p._id.toString(), quantity: 1, unitPrice: 100 }]);
+
+  test('no se puede cancelar una compra cuya mercancía ya se vendió', async () => {
+    const p = await h.producto();
+    const c = await h.comprar(admin, { proveedor: base.proveedor, productoId: p._id, quantity: 3, unitCost: 40 });
+    expect((await vender1(p)).status).toBe(201);
+    const del = await h.request(h.app).delete(`/api/compras/${c.body.data._id}`).set(h.auth(admin.token));
+    expect(del.status).toBe(400);
+    expect(await h.stockYCapas(p._id)).toMatchObject({ stock: 2, capas: 2 });
+  });
+
+  test('sí se puede cancelar si la venta que la consumió ya fue cancelada', async () => {
+    const p = await h.producto();
+    const c = await h.comprar(admin, { proveedor: base.proveedor, productoId: p._id, quantity: 3, unitCost: 40 });
+    const v = await vender1(p);
+    expect((await h.request(h.app).delete(`/api/ventas/${v.body.data._id}`).set(h.auth(admin.token))).status).toBe(200);
+    const del = await h.request(h.app).delete(`/api/compras/${c.body.data._id}`).set(h.auth(admin.token));
+    expect(del.status).toBe(200);
+    expect(await h.stockYCapas(p._id)).toMatchObject({ stock: 0, capas: 0 });
+  });
+});
