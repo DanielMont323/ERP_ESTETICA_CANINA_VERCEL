@@ -14,10 +14,13 @@ describe('hoyCalendarioTepic', () => {
     expect(d.toISOString()).toBe(`${esperado}T12:00:00.000Z`);
   });
 
-  test('documenta el defecto de getCurrentDateGMT7 (sigue en uso en ventas y reportes)', () => {
-    // 10:12 en Tepic: getCurrentDateGMT7 devuelve el día siguiente.
-    jest.useFakeTimers().setSystemTime(new Date('2026-11-11T17:12:00Z'));
-    expect(getCurrentDateGMT7().toISOString().slice(0, 10)).toBe('2026-11-12');
+  test.each([
+    ['10:12', '2026-11-11T17:12:00Z', '2026-11-11T10:12:00.000Z'],
+    ['17:30', '2026-11-12T00:30:00Z', '2026-11-11T17:30:00.000Z'],
+    ['23:59', '2026-11-12T06:59:00Z', '2026-11-11T23:59:00.000Z']
+  ])('getCurrentDateGMT7 a las %s de Tepic guarda la hora de Tepic (antes adelantaba un día)', (_, instante, esperado) => {
+    jest.useFakeTimers().setSystemTime(new Date(instante));
+    expect(getCurrentDateGMT7().toISOString()).toBe(esperado);
     jest.useRealTimers();
   });
 });

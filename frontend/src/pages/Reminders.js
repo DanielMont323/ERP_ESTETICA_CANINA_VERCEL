@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { remindersAPI } from '../services/api';
+import { hoyTepicISO } from '../helpers/dateUtils';
 import toast from 'react-hot-toast';
 import { Skeleton, SkeletonCard } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
@@ -35,7 +36,7 @@ const Reminders = () => {
     description: '',
     type: 'pago',
     priority: 'media',
-    date: new Date().toISOString().split('T')[0],
+    date: hoyTepicISO(),
     status: 'pendiente'
   });
 
@@ -102,7 +103,7 @@ const Reminders = () => {
       description: reminder.description || '',
       type: reminder.type,
       priority: reminder.priority,
-      date: new Date(reminder.date).toLocaleDateString('en-CA', { timeZone: 'America/Mazatlan' }),
+      date: new Date(reminder.date).toLocaleDateString('en-CA', { timeZone: 'UTC' }),
       status: reminder.status
     });
     setShowModal(true);
@@ -245,7 +246,7 @@ const Reminders = () => {
                         <div className="mt-3 space-y-2">
                           <div className="flex items-center text-sm text-gray-600 dark:text-dark-textSecondary">
                             <Calendar className="h-4 w-4 mr-2" />
-                            {new Date(reminder.date).toLocaleDateString('es-MX')}
+                            {new Date(reminder.date).toLocaleDateString('es-MX', { timeZone: 'UTC' })}
                           </div>
                           <div className="flex items-center justify-between">
                             <span className={`capitalize badge badge-${getUrgencyColor(reminder.urgency)}`}>
@@ -285,7 +286,7 @@ const Reminders = () => {
                       <div className="mt-3 space-y-2">
                         <div className="flex items-center text-sm text-gray-600 dark:text-dark-textSecondary">
                           <Calendar className="h-4 w-4 mr-2" />
-                          {new Date(reminder.date).toLocaleDateString('es-MX', { timeZone: 'America/Mazatlan' })}
+                          {new Date(reminder.date).toLocaleDateString('es-MX', { timeZone: 'UTC' })}
                           {isOverdue(reminder.date) && (
                             <AlertTriangle className="h-4 w-4 ml-2 text-danger-600" />
                           )}

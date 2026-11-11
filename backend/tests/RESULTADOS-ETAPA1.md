@@ -161,3 +161,33 @@ Datos existentes (no modificados): 1 de 44 compras históricas aparece un día d
 Pendiente: `getCurrentDateGMT7` afecta igual a ventas (default de `Venta.date`) y a reportes; revisar antes de la Etapa 4.
 
 Resultado automático: 57 pruebas — **57 pasan**.
+
+# Fechas en todos los módulos (2026-11-11)
+
+Queja del cliente: ventas hechas después de cierta hora aparecían al día siguiente. Confirmado.
+
+**Causa:** `getCurrentDateGMT7()` sumaba 7 h en vez de restarlas (cambio introducido a inicios de septiembre; en agosto se guardaba bien). Además cada módulo leía las fechas con una convención distinta:
+
+| Dónde | Antes | Efecto |
+|---|---|---|
+| Lista de ventas (pantalla) | hora del navegador sobre fecha +7 h | ventas después de las **17:00** se mostraban al día siguiente |
+| Filtro por día de ventas | día UTC del servidor | ventas después de las **10:00** caían en el día siguiente |
+| Reportes (estado de resultados, resumen, detalle, comportamiento, exportar) | rango 07:00Z–06:59Z sobre fecha +7 h; periodos con la zona del servidor | ventas después de las **17:00** contaban en el día (o mes) siguiente |
+| Dashboard | meses con la zona del servidor; "mes anterior" terminaba el último día a las 00:00 | dejaba fuera las ventas del último día del mes anterior |
+| Reporte de clientes | periodos con la zona del servidor | desfase según el servidor |
+| Recordatorios, cuentas por pagar, mascotas | "hoy" con la zona del servidor o en UTC | ventanas de "hoy/próximos días" desplazadas hasta 7 h |
+| Formularios (gastos, recordatorios, reportes, ventas, caducidad de productos) | "hoy" = día UTC (`toISOString`) | después de las 17:00 proponían o permitían el día siguiente |
+
+**Convención única** (documentada en `helpers/timezone.js`): la hora de Tepic se guarda en los componentes UTC; fechas sin hora a las 12:00 UTC; un día = 00:00Z–23:59:59.999Z; se muestra con componentes UTC. Nuevo `rangoPeriodoTepic()` reemplaza los 6 bloques duplicados de periodos en reportes y el de clientes.
+
+**Datos existentes (medido en la copia):** 427 ventas completadas con el defecto; **98 ventas ($47,173.24) se mostraban en el día siguiente** (sep 21, oct 57, nov 20). A nivel mes solo cambia una: venta `6ae6872d…` del 31/10 17:26 ($473), que contaba en noviembre.
+
+**Script de corrección** `backend/migraciones/2026-11-corregir-fechas-tepic.js`: solo toca registros con la firma exacta del defecto (fecha − creación = +7 h ±2 s, o −1 h ±2 s del código de agosto). Simulación por defecto; respaldo EJSON antes de escribir; idempotente; fuera de la copia local exige `--autorizado-por-el-usuario`.
+- Aplicado **solo en la copia local**: 458 ventas (436 +7 h, 22 −1 h) y 422 entradas de historial médico. Segunda pasada: 0.
+- Totales por mes (copia): agosto y septiembre sin cambio; octubre +$473.00; noviembre −$473.00. Estado de resultados vía API: octubre $113,639.54, noviembre $38,478.40.
+
+**No modificado:** fechas de carnets/aplicaciones de vacunas (se guardan como hora real y se muestran en hora de Tepic: ya eran correctas); 14 ventas del 2/11 con fecha 17 h antes de su creación (parecen corregidas a mano; caen en el día correcto); endpoints `audit-*` de reportes (diagnóstico).
+
+**Pendiente de autorización:** correr el script en producción (primero simulación, revisar, luego `--aplicar --autorizado-por-el-usuario`), junto con el despliegue del código; si se despliega el código sin corregir los datos, las ventas anteriores con el defecto se verían desplazadas.
+
+Resultado automático: 67 pruebas — **67 pasan** (zona del equipo America/Mazatlan y también con `TZ=UTC`).

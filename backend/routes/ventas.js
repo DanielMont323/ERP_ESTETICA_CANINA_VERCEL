@@ -42,10 +42,11 @@ router.get('/', async (req, res) => {
     if (date && !startDate && !endDate) {
       const filterDate = parseCalendarDate(date);
       if (filterDate) {
+        // Día en hora de Tepic (convención de helpers/timezone.js); antes dependía de la zona del servidor.
         const startOfDay = new Date(filterDate);
-        startOfDay.setHours(0, 0, 0, 0);
+        startOfDay.setUTCHours(0, 0, 0, 0);
         const endOfDay = new Date(filterDate);
-        endOfDay.setHours(23, 59, 59, 999);
+        endOfDay.setUTCHours(23, 59, 59, 999);
         query.date = { $gte: startOfDay, $lte: endOfDay };
       }
     }
@@ -56,8 +57,8 @@ router.get('/', async (req, res) => {
       const end = parseCalendarDate(endDate);
       
       if (start && end) {
-        start.setHours(0, 0, 0, 0);
-        end.setHours(23, 59, 59, 999);
+        start.setUTCHours(0, 0, 0, 0);
+        end.setUTCHours(23, 59, 59, 999);
         
         // Validar que startDate <= endDate
         if (start > end) {
@@ -73,14 +74,14 @@ router.get('/', async (req, res) => {
       // Solo startDate
       const start = parseCalendarDate(startDate);
       if (start) {
-        start.setHours(0, 0, 0, 0);
+        start.setUTCHours(0, 0, 0, 0);
         query.date = { $gte: start };
       }
     } else if (!startDate && endDate) {
       // Solo endDate
       const end = parseCalendarDate(endDate);
       if (end) {
-        end.setHours(23, 59, 59, 999);
+        end.setUTCHours(23, 59, 59, 999);
         query.date = { $lte: end };
       }
     }
@@ -1398,9 +1399,9 @@ router.get('/daily/:date', async (req, res) => {
   try {
     const date = new Date(req.params.date);
     const startDate = new Date(date);
-    startDate.setHours(0, 0, 0, 0);
+    startDate.setUTCHours(0, 0, 0, 0);
     const endDate = new Date(date);
-    endDate.setHours(23, 59, 59, 999);
+    endDate.setUTCHours(23, 59, 59, 999);
 
     const ventas = await Venta.find({
       date: { $gte: startDate, $lte: endDate },

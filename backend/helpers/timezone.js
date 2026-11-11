@@ -1,31 +1,32 @@
 /**
  * Helper para manejar zona horaria GMT-7 (Tepic, Nayarit, México)
+ *
+ * CONVENCIÓN ÚNICA: las fechas se guardan con la HORA DE TEPIC en los componentes UTC
+ * ("reloj de Tepic guardado como UTC"). Una venta a las 18:30 del 11/11 en Tepic se guarda
+ * como 2026-11-11T18:30:00Z. Las fechas de calendario (sin hora) van a las 12:00 UTC.
+ * Para mostrar se usan los componentes UTC; los rangos de un día son 00:00Z–23:59:59.999Z.
+ * Tepic usa UTC-7 todo el año (sin horario de verano desde 2022).
+ *
+ * Antes de este cambio getCurrentDateGMT7 SUMABA 7 horas (debía restarlas): a partir de las
+ * 10:00 de Tepic las ventas quedaban con fecha del día siguiente.
  */
+const OFFSET_TEPIC_MS = 7 * 3600000;
 
 /**
  * Obtiene la fecha actual en zona horaria GMT-7
  * @returns {Date} Fecha actual ajustada a GMT-7
  */
-const getCurrentDateGMT7 = () => {
-  const now = new Date();
-  // SUMAR 7 horas al timestamp UTC para obtener GMT-7
-  // UTC 07:00 = GMT-7 00:00, por lo que sumamos 7 horas
-  const gmt7Timestamp = now.getTime() + (7 * 3600000);
-  return new Date(gmt7Timestamp);
-};
+const getCurrentDateGMT7 = () => new Date(Date.now() - OFFSET_TEPIC_MS);
 
 /**
  * Convierte una fecha a zona horaria GMT-7
  * @param {Date} date - Fecha a convertir
  * @returns {Date} Fecha ajustada a GMT-7
  */
+// Instante real (p. ej. new Date()) → reloj de Tepic guardado como UTC.
 const toGMT7 = (date) => {
   if (!date) return null;
-  const d = new Date(date);
-  // SUMAR 7 horas al timestamp UTC para obtener GMT-7
-  // UTC 07:00 = GMT-7 00:00, por lo que sumamos 7 horas
-  const gmt7Timestamp = d.getTime() + (7 * 3600000);
-  return new Date(gmt7Timestamp);
+  return new Date(new Date(date).getTime() - OFFSET_TEPIC_MS);
 };
 
 /**
@@ -35,9 +36,9 @@ const toGMT7 = (date) => {
  */
 const formatGMT7 = (date) => {
   if (!date) return '';
-  const gmt7 = toGMT7(date);
-  return gmt7.toLocaleString('es-MX', {
-    timeZone: 'America/Mazatlan', // GMT-7
+  // La fecha ya está en reloj de Tepic: se formatea en UTC para no desplazarla otra vez.
+  return new Date(date).toLocaleString('es-MX', {
+    timeZone: 'UTC',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -51,9 +52,10 @@ const formatGMT7 = (date) => {
  * @param {Date} date - Fecha de referencia
  * @returns {Date} Inicio del día en GMT-7 (00:00:00)
  */
+// Recibe un INSTANTE REAL; devuelve el inicio de ese día de Tepic (00:00Z en la convención).
 const startOfDayGMT7 = (date) => {
   const gmt7 = toGMT7(date || new Date());
-  gmt7.setHours(0, 0, 0, 0);
+  gmt7.setUTCHours(0, 0, 0, 0);
   return gmt7;
 };
 
@@ -64,7 +66,7 @@ const startOfDayGMT7 = (date) => {
  */
 const endOfDayGMT7 = (date) => {
   const gmt7 = toGMT7(date || new Date());
-  gmt7.setHours(23, 59, 59, 999);
+  gmt7.setUTCHours(23, 59, 59, 999);
   return gmt7;
 };
 
@@ -120,9 +122,7 @@ const parseCalendarDate = (dateStr) => {
 const startOfDayGMT7FromCalendar = (calendarDate) => {
   if (!calendarDate) return null;
   const d = new Date(calendarDate);
-  // UTC 12:00 representa el mediodía del día GMT-7
-  // Inicio del día GMT-7 = UTC 12:00 - 5 horas = UTC 07:00
-  d.setUTCHours(7, 0, 0, 0);
+  d.setUTCHours(0, 0, 0, 0);
   return d;
 };
 
@@ -134,11 +134,7 @@ const startOfDayGMT7FromCalendar = (calendarDate) => {
 const endOfDayGMT7FromCalendar = (calendarDate) => {
   if (!calendarDate) return null;
   const d = new Date(calendarDate);
-  // UTC 12:00 representa el mediodía del día GMT-7
-  // Fin del día GMT-7 = UTC 12:00 + 19 horas = UTC 07:00 del día siguiente - 1ms
-  d.setUTCHours(7, 0, 0, 0);
-  d.setDate(d.getDate() + 1);
-  d.setMilliseconds(-1);
+  d.setUTCHours(23, 59, 59, 999);
   return d;
 };
 
@@ -157,8 +153,33 @@ const hoyCalendarioTepic = (ahora = new Date()) => {
   return createCalendarDate(ymd);
 };
 
+/**
+ * Rango { start, end } de un periodo en la convención de Tepic.
+ * period: 'day'|'today'|'week' (domingo a sábado)|'month'|'year'; o startDate/endDate 'YYYY-MM-DD'.
+ * Devuelve null si no hay periodo ni fechas.
+ */
+const rangoPeriodoTepic = ({ period, startDate, endDate } = {}, ahora = new Date()) => {
+  const hoy = toGMT7(ahora);
+  const y = hoy.getUTCFullYear(), m = hoy.getUTCMonth(), d = hoy.getUTCDate();
+  const dia = (yy, mm, dd) => new Date(Date.UTC(yy, mm, dd));
+  const fin = siguiente => new Date(siguiente.getTime() - 1);
+  if (period === 'day' || period === 'today') return { start: dia(y, m, d), end: fin(dia(y, m, d + 1)) };
+  if (period === 'week') {
+    const dom = d - hoy.getUTCDay();
+    return { start: dia(y, m, dom), end: fin(dia(y, m, dom + 7)) };
+  }
+  if (period === 'month') return { start: dia(y, m, 1), end: fin(dia(y, m + 1, 1)) };
+  if (period === 'year') return { start: dia(y, 0, 1), end: fin(dia(y + 1, 0, 1)) };
+  if (startDate && endDate) {
+    return { start: startOfDayGMT7FromCalendar(createCalendarDate(startDate)), end: endOfDayGMT7FromCalendar(createCalendarDate(endDate)) };
+  }
+  return null;
+};
+
 module.exports = {
   getCurrentDateGMT7,
+  rangoPeriodoTepic,
+  OFFSET_TEPIC_MS,
   hoyCalendarioTepic,
   toGMT7,
   formatGMT7,

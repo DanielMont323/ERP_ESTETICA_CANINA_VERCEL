@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { costsAPI } from '../services/api';
+import { hoyTepicISO } from '../helpers/dateUtils';
 import toast from 'react-hot-toast';
 import { SkeletonTable } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
@@ -34,7 +35,7 @@ const Costs = () => {
     category: 'renta',
     type: 'fijo',
     amount: 0,
-    date: new Date().toISOString().split('T')[0],
+    date: hoyTepicISO(),
     frequency: 'único'
   });
 
@@ -101,7 +102,7 @@ const Costs = () => {
       category: 'renta',
       type: 'fijo',
       amount: 0,
-      date: new Date().toISOString().split('T')[0],
+      date: hoyTepicISO(),
       frequency: 'único'
     });
     setShowModal(true);

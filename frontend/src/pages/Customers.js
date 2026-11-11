@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useKeyboardFormNavigation } from '../hooks/useKeyboardFormNavigation';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { customersAPI, salesAPI } from '../services/api';
+import { formatCalendarDate } from '../helpers/dateUtils';
 import toast from 'react-hot-toast';
 import { Skeleton, SkeletonCard } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
@@ -323,7 +324,7 @@ const Customers = () => {
                         <div key={sale._id} className="text-sm bg-gray-50 dark:bg-dark-surface p-2 rounded">
                           <div className="flex justify-between">
                             <span className="font-medium">
-                              {new Date(sale.date).toLocaleDateString('es-MX')}
+                              {formatCalendarDate(sale.date)}
                             </span>
                             <span className="text-gray-600 dark:text-dark-textSecondary">
                               ${sale.total?.toFixed(2) || '0.00'}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { reportsAPI } from '../services/api';
+import { hoyTepicISO } from '../helpers/dateUtils';
 import toast from 'react-hot-toast';
 import Skeleton, { SkeletonCard } from '../components/Skeleton';
 import { Download, TrendingUp, DollarSign, ShoppingCart, CreditCard, Store, Package } from 'lucide-react';
@@ -193,8 +194,8 @@ const Reports = () => {
       const link = document.createElement('a');
       link.href = url;
       
-      const start = dateRange.startDate || new Date().toISOString().split('T')[0];
-      const end = dateRange.endDate || new Date().toISOString().split('T')[0];
+      const start = dateRange.startDate || hoyTepicISO();
+      const end = dateRange.endDate || hoyTepicISO();
       link.setAttribute('download', `Reporte_Ventas_${start}_${end}.xlsx`);
       
       document.body.appendChild(link);

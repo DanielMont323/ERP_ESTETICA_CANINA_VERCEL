@@ -36,3 +36,5 @@ Thumbs.db
 # Build
 frontend/build/
 backend/server.js.backup
+
+backend/migraciones/respaldos-migracion/

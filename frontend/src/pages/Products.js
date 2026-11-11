@@ -6,6 +6,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import Pagination from '../components/Pagination';
 import Autocomplete from '../components/Autocomplete';
 import { useAuth } from '../contexts/AuthContext';
+import { hoyTepicISO } from '../helpers/dateUtils';
 import { useKeyboardFormNavigation } from '../hooks/useKeyboardFormNavigation';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import {
@@ -851,8 +852,9 @@ const Products = () => {
                           setFormData({...formData, isPerishable});
                           // Si se marca como perecedero y no hay fecha, establecer +120 días
                           if (isPerishable && !formData.expirationDate && !editingProduct) {
-                            const futureDate = new Date();
-                            futureDate.setDate(futureDate.getDate() + 120);
+                            // Hoy en Tepic + 120 días (antes partía del día UTC y podía adelantarse uno)
+                            const futureDate = new Date(`${hoyTepicISO()}T12:00:00Z`);
+                            futureDate.setUTCDate(futureDate.getUTCDate() + 120);
                             setFormData(prev => ({
                               ...prev,
                               isPerishable: true,

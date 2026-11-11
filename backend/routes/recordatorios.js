@@ -135,7 +135,7 @@ router.get('/pending', async (req, res) => {
 router.get('/dashboard', async (req, res) => {
   try {
     const today = getCurrentDateGMT7();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
     
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -163,7 +163,7 @@ router.get('/dashboard', async (req, res) => {
     
     for (const cuenta of cuentas) {
       const dueDate = new Date(cuenta.dueDate);
-      dueDate.setHours(0, 0, 0, 0);
+      dueDate.setUTCHours(0, 0, 0, 0);
       
       let urgency = 'proxima';
       let urgencyText = 'Próxima';
@@ -213,7 +213,7 @@ router.get('/dashboard', async (req, res) => {
         if (!vacuna.proximaDosis) continue;
         
         const proximaDosis = new Date(vacuna.proximaDosis);
-        proximaDosis.setHours(0, 0, 0, 0);
+        proximaDosis.setUTCHours(0, 0, 0, 0);
         
         // Solo mostrar vacunas que no están vencidas
         if (proximaDosis < today) continue;
@@ -509,7 +509,7 @@ router.get('/automatic/accounts', async (req, res) => {
   try {
     const { getCurrentDateGMT7 } = require('../helpers/timezone');
     const today = getCurrentDateGMT7();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
     
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -531,7 +531,7 @@ router.get('/automatic/accounts', async (req, res) => {
     
     for (const cuenta of cuentas) {
       const dueDate = new Date(cuenta.dueDate);
-      dueDate.setHours(0, 0, 0, 0);
+      dueDate.setUTCHours(0, 0, 0, 0);
       
       let urgency = 'proxima';
       let urgencyText = 'Próxima';
@@ -593,7 +593,7 @@ router.get('/automatic/vaccines', async (req, res) => {
   try {
     const { getCurrentDateGMT7 } = require('../helpers/timezone');
     const today = getCurrentDateGMT7();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
     
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -614,7 +614,7 @@ router.get('/automatic/vaccines', async (req, res) => {
         if (!vacuna.proximaDosis) continue;
         
         const proximaDosis = new Date(vacuna.proximaDosis);
-        proximaDosis.setHours(0, 0, 0, 0);
+        proximaDosis.setUTCHours(0, 0, 0, 0);
         
         let urgency = 'proxima';
         let urgencyText = 'Próxima';
@@ -716,7 +716,7 @@ router.get('/automatic/all', async (req, res) => {
 router.get('/dashboard', async (req, res) => {
   try {
     const today = getCurrentDateGMT7();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
     
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -744,7 +744,7 @@ router.get('/dashboard', async (req, res) => {
     
     for (const cuenta of cuentas) {
       const dueDate = new Date(cuenta.dueDate);
-      dueDate.setHours(0, 0, 0, 0);
+      dueDate.setUTCHours(0, 0, 0, 0);
       
       let urgency = 'proxima';
       let urgencyText = 'Próxima';
@@ -794,7 +794,7 @@ router.get('/dashboard', async (req, res) => {
         if (!vacuna.proximaDosis) continue;
         
         const proximaDosis = new Date(vacuna.proximaDosis);
-        proximaDosis.setHours(0, 0, 0, 0);
+        proximaDosis.setUTCHours(0, 0, 0, 0);
         
         // Solo mostrar vacunas que no están vencidas
         if (proximaDosis < today) continue;

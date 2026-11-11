@@ -8,7 +8,7 @@ const Servicio = require('../models/Servicio');
 const Cliente = require('../models/Cliente');
 const Proveedor = require('../models/Proveedor');
 const Recordatorio = require('../models/Recordatorio');
-const { startOfDayGMT7, endOfDayGMT7, toGMT7, createCalendarDate, formatCalendarDate, startOfDayGMT7FromCalendar, endOfDayGMT7FromCalendar } = require('../helpers/timezone');
+const { startOfDayGMT7, endOfDayGMT7, toGMT7, createCalendarDate, formatCalendarDate, startOfDayGMT7FromCalendar, endOfDayGMT7FromCalendar, rangoPeriodoTepic } = require('../helpers/timezone');
 const ExcelJS = require('exceljs');
 const router = express.Router();
 
@@ -76,8 +76,7 @@ router.get('/audit-sales', async (req, res) => {
       });
     }
 
-    const startGMT7 = startOfDayGMT7(new Date(startDate));
-    const endGMT7 = endOfDayGMT7(new Date(endDate));
+    const { start: startGMT7, end: endGMT7 } = rangoPeriodoTepic({ startDate, endDate });
 
     const ventas = await Venta.find({
       date: { $gte: startGMT7, $lte: endGMT7 },
@@ -279,49 +278,10 @@ router.get('/income-statement', async (req, res) => {
     let dateFilter = {};
     
     // Filtros de periodo predefinidos usando GMT-7
-    const todayGMT7 = startOfDayGMT7(new Date());
-    
-    if (period === 'day' || period === 'today') {
-      const endOfToday = endOfDayGMT7(new Date());
-      dateFilter = {
-        date: { $gte: todayGMT7, $lte: endOfToday }
-      };
-    } else if (period === 'week') {
-      const startOfWeek = new Date(todayGMT7);
-      startOfWeek.setDate(todayGMT7.getDate() - todayGMT7.getDay());
-      const startOfWeekGMT7 = startOfDayGMT7(startOfWeek);
-      const endOfWeek = new Date(startOfWeekGMT7);
-      endOfWeek.setDate(startOfWeekGMT7.getDate() + 6);
-      const endOfWeekGMT7 = endOfDayGMT7(endOfWeek);
-      dateFilter = {
-        date: { $gte: startOfWeekGMT7, $lte: endOfWeekGMT7 }
-      };
-    } else if (period === 'month') {
-      const startOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth(), 1);
-      const startOfMonthGMT7 = startOfDayGMT7(startOfMonth);
-      const endOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth() + 1, 0);
-      const endOfMonthGMT7 = endOfDayGMT7(endOfMonth);
-      dateFilter = {
-        date: { $gte: startOfMonthGMT7, $lte: endOfMonthGMT7 }
-      };
-    } else if (period === 'year') {
-      const startOfYear = new Date(todayGMT7.getFullYear(), 0, 1);
-      const startOfYearGMT7 = startOfDayGMT7(startOfYear);
-      const endOfYear = new Date(todayGMT7.getFullYear(), 11, 31);
-      const endOfYearGMT7 = endOfDayGMT7(endOfYear);
-      dateFilter = {
-        date: { $gte: startOfYearGMT7, $lte: endOfYearGMT7 }
-      };
-    } else if (startDate && endDate) {
-      // Usar funciones de calendario para evitar desfase de zona horaria
-      const startCalendar = createCalendarDate(startDate);
-      const endCalendar = createCalendarDate(endDate);
-      // Para el filtro: inicio del día inicial (00:00 GMT-7) hasta fin del día final (23:59:59.999 GMT-7)
-      const startGMT7 = startOfDayGMT7FromCalendar(startCalendar);
-      const endGMT7 = endOfDayGMT7FromCalendar(endCalendar);
-      dateFilter = {
-        date: { $gte: startGMT7, $lte: endGMT7 }
-      };
+    // Rango en hora de Tepic (ver helpers/timezone.js)
+    const rango = rangoPeriodoTepic({ period, startDate, endDate });
+    if (rango) {
+      dateFilter = { date: { $gte: rango.start, $lte: rango.end } };
     }
 
     // Ingresos por ventas
@@ -414,49 +374,10 @@ router.get('/expenses-detail', async (req, res) => {
     let dateFilter = {};
     
     // Filtros de periodo predefinidos usando GMT-7 (misma lógica que income-statement)
-    const todayGMT7 = startOfDayGMT7(new Date());
-    
-    if (period === 'day' || period === 'today') {
-      const endOfToday = endOfDayGMT7(new Date());
-      dateFilter = {
-        date: { $gte: todayGMT7, $lte: endOfToday }
-      };
-    } else if (period === 'week') {
-      const startOfWeek = new Date(todayGMT7);
-      startOfWeek.setDate(todayGMT7.getDate() - todayGMT7.getDay());
-      const startOfWeekGMT7 = startOfDayGMT7(startOfWeek);
-      const endOfWeek = new Date(startOfWeekGMT7);
-      endOfWeek.setDate(startOfWeekGMT7.getDate() + 6);
-      const endOfWeekGMT7 = endOfDayGMT7(endOfWeek);
-      dateFilter = {
-        date: { $gte: startOfWeekGMT7, $lte: endOfWeekGMT7 }
-      };
-    } else if (period === 'month') {
-      const startOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth(), 1);
-      const startOfMonthGMT7 = startOfDayGMT7(startOfMonth);
-      const endOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth() + 1, 0);
-      const endOfMonthGMT7 = endOfDayGMT7(endOfMonth);
-      dateFilter = {
-        date: { $gte: startOfMonthGMT7, $lte: endOfMonthGMT7 }
-      };
-    } else if (period === 'year') {
-      const startOfYear = new Date(todayGMT7.getFullYear(), 0, 1);
-      const startOfYearGMT7 = startOfDayGMT7(startOfYear);
-      const endOfYear = new Date(todayGMT7.getFullYear(), 11, 31);
-      const endOfYearGMT7 = endOfDayGMT7(endOfYear);
-      dateFilter = {
-        date: { $gte: startOfYearGMT7, $lte: endOfYearGMT7 }
-      };
-    } else if (startDate && endDate) {
-      // Usar funciones de calendario para evitar desfase de zona horaria
-      const startCalendar = createCalendarDate(startDate);
-      const endCalendar = createCalendarDate(endDate);
-      // Para el filtro: inicio del día inicial (00:00 GMT-7) hasta fin del día final (23:59:59.999 GMT-7)
-      const startGMT7 = startOfDayGMT7FromCalendar(startCalendar);
-      const endGMT7 = endOfDayGMT7FromCalendar(endCalendar);
-      dateFilter = {
-        date: { $gte: startGMT7, $lte: endGMT7 }
-      };
+    // Rango en hora de Tepic (ver helpers/timezone.js)
+    const rango = rangoPeriodoTepic({ period, startDate, endDate });
+    if (rango) {
+      dateFilter = { date: { $gte: rango.start, $lte: rango.end } };
     }
 
     // Obtener costos del período (misma lógica que income-statement)
@@ -501,49 +422,10 @@ router.get('/sales-detail', async (req, res) => {
     let dateFilter = {};
     
     // Filtros de periodo predefinidos usando GMT-7 (misma lógica que expenses-detail)
-    const todayGMT7 = startOfDayGMT7(new Date());
-    
-    if (period === 'day' || period === 'today') {
-      const endOfToday = endOfDayGMT7(new Date());
-      dateFilter = {
-        date: { $gte: todayGMT7, $lte: endOfToday }
-      };
-    } else if (period === 'week') {
-      const startOfWeek = new Date(todayGMT7);
-      startOfWeek.setDate(todayGMT7.getDate() - todayGMT7.getDay());
-      const startOfWeekGMT7 = startOfDayGMT7(startOfWeek);
-      const endOfWeek = new Date(startOfWeekGMT7);
-      endOfWeek.setDate(startOfWeekGMT7.getDate() + 6);
-      const endOfWeekGMT7 = endOfDayGMT7(endOfWeek);
-      dateFilter = {
-        date: { $gte: startOfWeekGMT7, $lte: endOfWeekGMT7 }
-      };
-    } else if (period === 'month') {
-      const startOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth(), 1);
-      const startOfMonthGMT7 = startOfDayGMT7(startOfMonth);
-      const endOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth() + 1, 0);
-      const endOfMonthGMT7 = endOfDayGMT7(endOfMonth);
-      dateFilter = {
-        date: { $gte: startOfMonthGMT7, $lte: endOfMonthGMT7 }
-      };
-    } else if (period === 'year') {
-      const startOfYear = new Date(todayGMT7.getFullYear(), 0, 1);
-      const startOfYearGMT7 = startOfDayGMT7(startOfYear);
-      const endOfYear = new Date(todayGMT7.getFullYear(), 11, 31);
-      const endOfYearGMT7 = endOfDayGMT7(endOfYear);
-      dateFilter = {
-        date: { $gte: startOfYearGMT7, $lte: endOfYearGMT7 }
-      };
-    } else if (startDate && endDate) {
-      // Usar funciones de calendario para evitar desfase de zona horaria
-      const startCalendar = createCalendarDate(startDate);
-      const endCalendar = createCalendarDate(endDate);
-      // Para el filtro: inicio del día inicial (00:00 GMT-7) hasta fin del día final (23:59:59.999 GMT-7)
-      const startGMT7 = startOfDayGMT7FromCalendar(startCalendar);
-      const endGMT7 = endOfDayGMT7FromCalendar(endCalendar);
-      dateFilter = {
-        date: { $gte: startGMT7, $lte: endGMT7 }
-      };
+    // Rango en hora de Tepic (ver helpers/timezone.js)
+    const rango = rangoPeriodoTepic({ period, startDate, endDate });
+    if (rango) {
+      dateFilter = { date: { $gte: rango.start, $lte: rango.end } };
     }
 
     // Obtener ventas del período con populates
@@ -609,49 +491,10 @@ router.get('/sales-summary', async (req, res) => {
     let dateFilter = {};
     
     // Filtros de periodo predefinidos usando GMT-7
-    const todayGMT7 = startOfDayGMT7(new Date());
-    
-    if (period === 'day' || period === 'today') {
-      const endOfToday = endOfDayGMT7(new Date());
-      dateFilter = {
-        date: { $gte: todayGMT7, $lte: endOfToday }
-      };
-    } else if (period === 'week') {
-      const startOfWeek = new Date(todayGMT7);
-      startOfWeek.setDate(todayGMT7.getDate() - todayGMT7.getDay());
-      const startOfWeekGMT7 = startOfDayGMT7(startOfWeek);
-      const endOfWeek = new Date(startOfWeekGMT7);
-      endOfWeek.setDate(startOfWeekGMT7.getDate() + 6);
-      const endOfWeekGMT7 = endOfDayGMT7(endOfWeek);
-      dateFilter = {
-        date: { $gte: startOfWeekGMT7, $lte: endOfWeekGMT7 }
-      };
-    } else if (period === 'month') {
-      const startOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth(), 1);
-      const startOfMonthGMT7 = startOfDayGMT7(startOfMonth);
-      const endOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth() + 1, 0);
-      const endOfMonthGMT7 = endOfDayGMT7(endOfMonth);
-      dateFilter = {
-        date: { $gte: startOfMonthGMT7, $lte: endOfMonthGMT7 }
-      };
-    } else if (period === 'year') {
-      const startOfYear = new Date(todayGMT7.getFullYear(), 0, 1);
-      const startOfYearGMT7 = startOfDayGMT7(startOfYear);
-      const endOfYear = new Date(todayGMT7.getFullYear(), 11, 31);
-      const endOfYearGMT7 = endOfDayGMT7(endOfYear);
-      dateFilter = {
-        date: { $gte: startOfYearGMT7, $lte: endOfYearGMT7 }
-      };
-    } else if (startDate && endDate) {
-      // Usar funciones de calendario para evitar desfase de zona horaria
-      const startCalendar = createCalendarDate(startDate);
-      const endCalendar = createCalendarDate(endDate);
-      // Para el filtro: inicio del día inicial (00:00 GMT-7) hasta fin del día final (23:59:59.999 GMT-7)
-      const startGMT7 = startOfDayGMT7FromCalendar(startCalendar);
-      const endGMT7 = endOfDayGMT7FromCalendar(endCalendar);
-      dateFilter = {
-        date: { $gte: startGMT7, $lte: endGMT7 }
-      };
+    // Rango en hora de Tepic (ver helpers/timezone.js)
+    const rango = rangoPeriodoTepic({ period, startDate, endDate });
+    if (rango) {
+      dateFilter = { date: { $gte: rango.start, $lte: rango.end } };
     }
 
     let groupFormat;
@@ -934,49 +777,10 @@ router.get('/sales-behavior', async (req, res) => {
     let dateFilter = {};
     
     // Filtros de periodo predefinidos usando GMT-7
-    const todayGMT7 = startOfDayGMT7(new Date());
-    
-    if (period === 'day' || period === 'today') {
-      const endOfToday = endOfDayGMT7(new Date());
-      dateFilter = {
-        date: { $gte: todayGMT7, $lte: endOfToday }
-      };
-    } else if (period === 'week') {
-      const startOfWeek = new Date(todayGMT7);
-      startOfWeek.setDate(todayGMT7.getDate() - todayGMT7.getDay());
-      const startOfWeekGMT7 = startOfDayGMT7(startOfWeek);
-      const endOfWeek = new Date(startOfWeekGMT7);
-      endOfWeek.setDate(startOfWeekGMT7.getDate() + 6);
-      const endOfWeekGMT7 = endOfDayGMT7(endOfWeek);
-      dateFilter = {
-        date: { $gte: startOfWeekGMT7, $lte: endOfWeekGMT7 }
-      };
-    } else if (period === 'month') {
-      const startOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth(), 1);
-      const startOfMonthGMT7 = startOfDayGMT7(startOfMonth);
-      const endOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth() + 1, 0);
-      const endOfMonthGMT7 = endOfDayGMT7(endOfMonth);
-      dateFilter = {
-        date: { $gte: startOfMonthGMT7, $lte: endOfMonthGMT7 }
-      };
-    } else if (period === 'year') {
-      const startOfYear = new Date(todayGMT7.getFullYear(), 0, 1);
-      const startOfYearGMT7 = startOfDayGMT7(startOfYear);
-      const endOfYear = new Date(todayGMT7.getFullYear(), 11, 31);
-      const endOfYearGMT7 = endOfDayGMT7(endOfYear);
-      dateFilter = {
-        date: { $gte: startOfYearGMT7, $lte: endOfYearGMT7 }
-      };
-    } else if (startDate && endDate) {
-      // Usar funciones de calendario para evitar desfase de zona horaria
-      const startCalendar = createCalendarDate(startDate);
-      const endCalendar = createCalendarDate(endDate);
-      // Para el filtro: inicio del día inicial (00:00 GMT-7) hasta fin del día final (23:59:59.999 GMT-7)
-      const startGMT7 = startOfDayGMT7FromCalendar(startCalendar);
-      const endGMT7 = endOfDayGMT7FromCalendar(endCalendar);
-      dateFilter = {
-        date: { $gte: startGMT7, $lte: endGMT7 }
-      };
+    // Rango en hora de Tepic (ver helpers/timezone.js)
+    const rango = rangoPeriodoTepic({ period, startDate, endDate });
+    if (rango) {
+      dateFilter = { date: { $gte: rango.start, $lte: rango.end } };
     }
 
     const ventas = await Venta.find({
@@ -1268,49 +1072,10 @@ router.get('/customers', async (req, res) => {
     
     let dateFilter = {};
     
-    // Filtros de periodo predefinidos
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    if (period === 'today') {
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      dateFilter = {
-        date: { $gte: today, $lt: tomorrow }
-      };
-    } else if (period === 'week') {
-      const startOfWeek = new Date(today);
-      startOfWeek.setDate(today.getDate() - today.getDay());
-      startOfWeek.setHours(0, 0, 0, 0);
-      const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(startOfWeek.getDate() + 7);
-      dateFilter = {
-        date: { $gte: startOfWeek, $lt: endOfWeek }
-      };
-    } else if (period === 'month') {
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-      endOfMonth.setHours(23, 59, 59, 999);
-      dateFilter = {
-        date: { $gte: startOfMonth, $lte: endOfMonth }
-      };
-    } else if (period === 'year') {
-      const startOfYear = new Date(today.getFullYear(), 0, 1);
-      const endOfYear = new Date(today.getFullYear(), 11, 31);
-      endOfYear.setHours(23, 59, 59, 999);
-      dateFilter = {
-        date: { $gte: startOfYear, $lte: endOfYear }
-      };
-    } else if (startDate && endDate) {
-      // Usar funciones de calendario para evitar desfase de zona horaria
-      const startCalendar = createCalendarDate(startDate);
-      const endCalendar = createCalendarDate(endDate);
-      // Para el filtro: inicio del día inicial (00:00 GMT-7) hasta fin del día final (23:59:59.999 GMT-7)
-      const startGMT7 = startOfDayGMT7FromCalendar(startCalendar);
-      const endGMT7 = endOfDayGMT7FromCalendar(endCalendar);
-      dateFilter = {
-        date: { $gte: startGMT7, $lte: endGMT7 }
-      };
+    // Rango en hora de Tepic (antes usaba la hora del servidor)
+    const rango = rangoPeriodoTepic({ period, startDate, endDate });
+    if (rango) {
+      dateFilter = { date: { $gte: rango.start, $lte: rango.end } };
     }
 
     const totalCustomers = await Cliente.countDocuments({ isActive: true });
@@ -1410,10 +1175,12 @@ router.get('/customers', async (req, res) => {
 // @desc    Datos para dashboard principal
 router.get('/dashboard', async (req, res) => {
   try {
-    const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+    // Meses en hora de Tepic. Antes endOfLastMonth era el último día a las 00:00 del servidor
+    // y dejaba fuera las ventas de ese día.
+    const today = toGMT7(new Date());
+    const startOfMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+    const startOfLastMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+    const endOfLastMonth = new Date(startOfMonth.getTime() - 1);
 
     // Ventas del mes actual
     const currentMonthSales = await Venta.find({
@@ -1460,8 +1227,8 @@ router.get('/dashboard', async (req, res) => {
     // Recordatorios pendientes hoy
     const todayReminders = await Recordatorio.countDocuments({
       date: {
-        $gte: new Date(today.setHours(0, 0, 0, 0)),
-        $lte: new Date(today.setHours(23, 59, 59, 999))
+        $gte: new Date(new Date(today).setUTCHours(0, 0, 0, 0)),
+        $lte: new Date(new Date(today).setUTCHours(23, 59, 59, 999))
       },
       status: 'pendiente'
     });
@@ -1517,49 +1284,10 @@ router.get('/export-sales', async (req, res) => {
     let dateFilter = {};
     
     // Filtros de periodo predefinidos usando GMT-7
-    const todayGMT7 = startOfDayGMT7(new Date());
-    
-    if (period === 'day' || period === 'today') {
-      const endOfToday = endOfDayGMT7(new Date());
-      dateFilter = {
-        date: { $gte: todayGMT7, $lte: endOfToday }
-      };
-    } else if (period === 'week') {
-      const startOfWeek = new Date(todayGMT7);
-      startOfWeek.setDate(todayGMT7.getDate() - todayGMT7.getDay());
-      const startOfWeekGMT7 = startOfDayGMT7(startOfWeek);
-      const endOfWeek = new Date(startOfWeekGMT7);
-      endOfWeek.setDate(startOfWeekGMT7.getDate() + 6);
-      const endOfWeekGMT7 = endOfDayGMT7(endOfWeek);
-      dateFilter = {
-        date: { $gte: startOfWeekGMT7, $lte: endOfWeekGMT7 }
-      };
-    } else if (period === 'month') {
-      const startOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth(), 1);
-      const startOfMonthGMT7 = startOfDayGMT7(startOfMonth);
-      const endOfMonth = new Date(todayGMT7.getFullYear(), todayGMT7.getMonth() + 1, 0);
-      const endOfMonthGMT7 = endOfDayGMT7(endOfMonth);
-      dateFilter = {
-        date: { $gte: startOfMonthGMT7, $lte: endOfMonthGMT7 }
-      };
-    } else if (period === 'year') {
-      const startOfYear = new Date(todayGMT7.getFullYear(), 0, 1);
-      const startOfYearGMT7 = startOfDayGMT7(startOfYear);
-      const endOfYear = new Date(todayGMT7.getFullYear(), 11, 31);
-      const endOfYearGMT7 = endOfDayGMT7(endOfYear);
-      dateFilter = {
-        date: { $gte: startOfYearGMT7, $lte: endOfYearGMT7 }
-      };
-    } else if (startDate && endDate) {
-      // Usar funciones de calendario para evitar desfase de zona horaria
-      const startCalendar = createCalendarDate(startDate);
-      const endCalendar = createCalendarDate(endDate);
-      // Para el filtro: inicio del día inicial (00:00 GMT-7) hasta fin del día final (23:59:59.999 GMT-7)
-      const startGMT7 = startOfDayGMT7FromCalendar(startCalendar);
-      const endGMT7 = endOfDayGMT7FromCalendar(endCalendar);
-      dateFilter = {
-        date: { $gte: startGMT7, $lte: endGMT7 }
-      };
+    // Rango en hora de Tepic (ver helpers/timezone.js)
+    const rango = rangoPeriodoTepic({ period, startDate, endDate });
+    if (rango) {
+      dateFilter = { date: { $gte: rango.start, $lte: rango.end } };
     }
 
     // Obtener ventas

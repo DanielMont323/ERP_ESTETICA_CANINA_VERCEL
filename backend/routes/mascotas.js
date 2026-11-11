@@ -2,6 +2,7 @@ const express = require('express');
 const Mascota = require('../models/Mascota');
 const Cliente = require('../models/Cliente');
 const CarnetVacunacion = require('../models/CarnetVacunacion');
+const { getCurrentDateGMT7 } = require('../helpers/timezone');
 const router = express.Router();
 
 // @route   GET /api/mascotas
@@ -371,8 +372,8 @@ router.post('/:id/vaccinations', async (req, res) => {
 // @desc    Obtener mascotas con vacunas próximas a vencer
 router.get('/vaccinations/due', async (req, res) => {
   try {
-    const today = new Date();
-    const next30Days = new Date();
+    const today = getCurrentDateGMT7(); // hoy en hora de Tepic
+    const next30Days = getCurrentDateGMT7();
     next30Days.setDate(today.getDate() + 30);
 
     const mascotas = await Mascota.find({

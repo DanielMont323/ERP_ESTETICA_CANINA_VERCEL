@@ -17,6 +17,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { formatCalendarDate, hoyTepicISO } from '../helpers/dateUtils';
 
 const Sales = () => {
   const { user } = useAuth();
@@ -550,7 +551,7 @@ const Sales = () => {
       // Cargar fecha de la venta
       const saleDate = sale.date ? new Date(sale.date) : null;
       const formattedDate = saleDate && !isNaN(saleDate.getTime()) 
-        ? `${saleDate.getFullYear()}-${String(saleDate.getMonth() + 1).padStart(2, '0')}-${String(saleDate.getDate()).padStart(2, '0')}` 
+        ? `${saleDate.getUTCFullYear()}-${String(saleDate.getUTCMonth() + 1).padStart(2, '0')}-${String(saleDate.getUTCDate()).padStart(2, '0')}` 
         : '';
       setEditSaleDate(formattedDate);
       
@@ -1379,8 +1380,8 @@ const Sales = () => {
                 <tr key={sale._id} className={`table-row-divider ${index % 2 === 0 ? 'bg-white dark:bg-dark-card' : 'bg-gray-50 dark:bg-dark-surface'} hover:bg-yellow-100`}>
                   <td className="py-4 px-4">
                     {(() => {
-                      const d = new Date(sale.date);
-                      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                      // La fecha guardada ya está en hora de Tepic: se lee con componentes UTC.
+                      return formatCalendarDate(sale.date);
                     })()}
                   </td>
                   <td className="py-4 px-4">
@@ -1485,8 +1486,7 @@ const Sales = () => {
                     <p className="text-xs text-gray-500 dark:text-dark-textSecondary uppercase tracking-wide mb-1">Fecha</p>
                     <p className="text-sm font-medium text-gray-700 dark:text-dark-text">
                       {(() => {
-                        const d = new Date(sale.date);
-                        return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                        return formatCalendarDate(sale.date);
                       })()}
                     </p>
                   </div>
@@ -1728,7 +1728,7 @@ const Sales = () => {
                         type="date"
                         value={saleDate}
                         onChange={(e) => setSaleDate(e.target.value)}
-                        max={new Date().toISOString().split('T')[0]}
+                        max={hoyTepicISO()}
                         className="form-input"
                       />
                       <p className="text-xs text-gray-500 dark:text-dark-textSecondary mt-1">

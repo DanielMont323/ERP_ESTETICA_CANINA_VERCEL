@@ -2,6 +2,7 @@ const express = require('express');
 const CuentaPorPagar = require('../models/CuentaPorPagar');
 const Proveedor = require('../models/Proveedor');
 const { authenticateToken } = require('../middleware/auth');
+const { getCurrentDateGMT7 } = require('../helpers/timezone');
 const router = express.Router();
 
 // @route   GET /api/cuentas-por-pagar
@@ -16,9 +17,9 @@ router.get('/', authenticateToken, async (req, res) => {
     if (dueDate) {
       const date = new Date(dueDate);
       const startDate = new Date(date);
-      startDate.setHours(0, 0, 0, 0);
+      startDate.setUTCHours(0, 0, 0, 0);
       const endDate = new Date(date);
-      endDate.setHours(23, 59, 59, 999);
+      endDate.setUTCHours(23, 59, 59, 999);
       query.dueDate = { $gte: startDate, $lte: endDate };
     }
 
@@ -293,7 +294,7 @@ router.post('/pagar-masivo', authenticateToken, async (req, res) => {
 // @desc    Obtener cuentas vencidas
 router.get('/overdue', authenticateToken, async (req, res) => {
   try {
-    const today = new Date();
+    const today = getCurrentDateGMT7(); // hoy en hora de Tepic
     
     const cuentas = await CuentaPorPagar.find({
       status: 'pendiente',
@@ -320,7 +321,7 @@ router.get('/overdue', authenticateToken, async (req, res) => {
 // @desc    Obtener cuentas próximas a vencer (próximos 7 días)
 router.get('/upcoming', authenticateToken, async (req, res) => {
   try {
-    const today = new Date();
+    const today = getCurrentDateGMT7(); // hoy en hora de Tepic
     const next7Days = new Date();
     next7Days.setDate(today.getDate() + 7);
     
@@ -349,15 +350,15 @@ router.get('/upcoming', authenticateToken, async (req, res) => {
 // @desc    Obtener cuentas que vencen mañana (para alertas)
 router.get('/due-tomorrow', authenticateToken, async (req, res) => {
   try {
-    const today = new Date();
+    const today = getCurrentDateGMT7(); // hoy en hora de Tepic
     const tomorrow = new Date();
     tomorrow.setDate(today.getDate() + 1);
     
     // Inicio y fin del día de mañana
     const startOfTomorrow = new Date(tomorrow);
-    startOfTomorrow.setHours(0, 0, 0, 0);
+    startOfTomorrow.setUTCHours(0, 0, 0, 0);
     const endOfTomorrow = new Date(tomorrow);
-    endOfTomorrow.setHours(23, 59, 59, 999);
+    endOfTomorrow.setUTCHours(23, 59, 59, 999);
     
     const cuentas = await CuentaPorPagar.find({
       status: 'pendiente',
@@ -513,10 +514,10 @@ router.patch('/:id/status', async (req, res) => {
 // @desc    Obtener resumen de cuentas por pagar
 router.get('/summary', async (req, res) => {
   try {
-    const today = new Date();
+    const today = getCurrentDateGMT7(); // hoy en hora de Tepic
     const next7Days = new Date();
     next7Days.setDate(today.getDate() + 7);
-    const next30Days = new Date();
+    const next30Days = getCurrentDateGMT7();
     next30Days.setDate(today.getDate() + 30);
 
     const totalPending = await CuentaPorPagar.aggregate([
