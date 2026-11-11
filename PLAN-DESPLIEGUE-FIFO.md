@@ -6,7 +6,9 @@ Rama local: `fifo-rentabilidad`. Probado en ensayo sobre copia exacta de producc
 Entre el paso 5 (código nuevo en línea) y el paso 7 (apertura FIFO) **no se puede vender ningún producto**, por eso van seguidos.
 
 Quién hace qué:
-- **Tú:** GitHub (merge y push), panel del hosting (Zeabur/Render/Vercel), Atlas.
+- **Tú:** GitHub (merge a `main` y push), panel de Vercel, Atlas.
+
+**Cómo se despliega:** Vercel tiene dos proyectos (raíz `backend` y raíz `frontend`) conectados a GitHub. Un push a `main` despliega los dos automáticamente (~1–3 min). Un commit local no despliega: hace falta el push.
 - **Claude:** scripts contra la base (pasos 2, 3, 6, 7, 8), solo con tu autorización ese día.
 
 ---
@@ -16,8 +18,9 @@ Quién hace qué:
 | # | Tarea | Quién |
 |---|---|---|
 | A | Capturar el costo de **"Casco para mascota"** en Productos (hoy $0; si no, entra al inventario a $0 "sin costo") | Tú |
-| B | **Cambiar la contraseña** del usuario de Atlas (quedó escrita en el chat) y actualizarla en `backend/.env` de tu PC y en las variables del backend en el hosting | Tú |
-| C | Confirmar que el hosting del backend corre `npm install` al desplegar (Zeabur y Render lo hacen). El código nuevo usa `uuid`, que no está en el `node_modules` del repositorio | Tú |
+| B | **Variables del backend en Vercel** (proyecto backend → Settings → Environment Variables, entorno *Production*): deben existir `MONGODB_URI`, `JWT_SECRET` y `NODE_ENV=production`. **Bloqueante:** hoy `main` incluye `backend/.env` en el repositorio y esta rama lo quita (tenía la contraseña). Si el backend dependía de ese archivo, sin las variables quedaría desconectado. Si `JWT_SECRET` de Vercel es distinto al del archivo, no pasa nada: Vercel ya usa el suyo | Tú |
+| C | **Cambiar la contraseña** del usuario de Atlas (quedó escrita en el chat y en el historial de GitHub por el `.env`) y poner la nueva en `MONGODB_URI` de Vercel y en `backend/.env` de tu PC. Al cambiar una variable, Vercel necesita *Redeploy* para usarla | Tú |
+| C2 | No hace falta nada para dependencias: Vercel corre `npm install` con el `package.json` (incluye `uuid`) | — |
 | D | Decidir el **correo del administrador** a cuyo nombre se registra la apertura FIFO | Tú |
 
 Ya hecho (11/11): datos de prueba desactivados, 6 índices creados, respaldo `estetica-canica-2026-11-11-preparada`.
@@ -44,10 +47,20 @@ node migraciones/2026-11-apertura-fifo.js --uri "<uri de producción>" --admin <
 ```
 
 ### 4. Publicar el código (Tú)
-Merge de `fifo-rentabilidad` a `main` y push. No hay variables de entorno nuevas.
+```bash
+git checkout main
+```
+```bash
+git merge fifo-rentabilidad
+```
+```bash
+git push origin main
+```
+No hay variables de entorno nuevas. **No subas la rama `fifo-rentabilidad` sola antes del día:** Vercel crearía un despliegue *Preview* que, si usa las mismas variables, apunta a la base de producción.
 
 ### 5. Esperar que el backend y el frontend nuevos estén en línea (Tú)
-- Backend: `GET /api/health` responde OK y el log del hosting no muestra errores al arrancar.
+- En Vercel, los dos proyectos con el deployment nuevo en estado **Ready**.
+- Backend: `https://<tu-backend>.vercel.app/api/health` responde OK; en *Logs* no hay errores de conexión a MongoDB.
 - Frontend: la pantalla de login carga.
 Backend y frontend deben quedar los dos con la versión nueva (las pantallas leen las fechas con la regla nueva).
 
@@ -84,7 +97,7 @@ Avisar al personal que ya pueden vender.
 
 Decidir **antes del paso 9**. Después de reabrir, las ventas nuevas ya usan FIFO y volver atrás pierde ese registro.
 
-1. **Código:** volver a desplegar el commit anterior de `main` (`126dd89f`) — Tú.
+1. **Código:** en Vercel, en cada proyecto (backend y frontend) → *Deployments* → el deployment anterior → **Instant Rollback / Promote to Production**. Es inmediato y no requiere tocar GitHub — Tú.
 2. **Fechas** (Claude): revierte exactamente con el respaldo del paso 6.
    ```bash
    node migraciones/2026-11-revertir-fechas-tepic.js --uri "<uri de producción>" --respaldo <archivo del paso 6> --aplicar --autorizado-por-el-usuario
