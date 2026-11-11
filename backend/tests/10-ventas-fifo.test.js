@@ -164,14 +164,69 @@ describe('F14 — productos con stock y sin capas FIFO', () => {
 });
 
 describe('F4/F5 — ventas anteriores a FIFO (sin fifoTracked)', () => {
-  test('cancelar una venta histórica cuyo producto ya tiene capas FIFO se rechaza sin cambios', async () => {
+  const apertura = (p, qty, unitCost = 50) => InventoryLayer.create({ producto: p._id, quantity: qty, initialQuantity: qty, remainingQuantity: qty, unitCost, totalCost: qty * unitCost, source: 'inventario_inicial', costSource: 'costo_capturado', isInitialLayer: true, receivedDate: new Date('2026-11-01T00:00:00Z') });
+  const historica = items => Venta.create({ items, paymentMethod: 'efectivo', saleChannel: 'local', status: 'completada' });
+
+  test('cancelar una venta histórica de un producto con FIFO devuelve la mercancía como capa de ajuste', async () => {
+    const p = await h.producto({ stock: 8, cost: 999, fifoInitialized: true });
+    await apertura(p, 8, 50);
+    const legacy = await historica([linea(p, 2)]);
+    const del = await h.request(h.app).delete(`/api/ventas/${legacy._id}`).set(h.auth(admin.token));
+    expect(del.status).toBe(200);
+    expect(await h.stockYCapas(p._id)).toMatchObject({ stock: 10, capas: 10 });
+    const capa = await InventoryLayer.findOne({ producto: p._id, source: 'ajuste_entrada' });
+    // costo de la capa de apertura (no Producto.cost), marcado como estimado
+    expect(capa).toMatchObject({ remainingQuantity: 2, unitCost: 50, costSource: 'costo_capturado' });
+    const mov = await InventoryMovement.findOne({ sourceId: legacy._id, source: 'ajuste' });
+    expect(mov).toMatchObject({ type: 'entrada', quantity: 2, totalCost: 100 });
+    expect((await Venta.findById(legacy._id)).status).toBe('cancelada');
+  });
+
+  test('después de la devolución el producto se sigue vendiendo: primero la apertura, luego lo devuelto', async () => {
+    const p = await h.producto({ stock: 1, fifoInitialized: true });
+    await apertura(p, 1, 50);
+    const legacy = await historica([linea(p, 2)]);
+    await h.request(h.app).delete(`/api/ventas/${legacy._id}`).set(h.auth(admin.token));
+    const v = await h.vender(admin.token, [linea(p, 2)]);
+    expect(v.status).toBe(201);
+    expect(await h.stockYCapas(p._id)).toMatchObject({ stock: 1, capas: 1 });
+  });
+
+  test('producto agotado y sin capas: la devolución abre su inventario FIFO', async () => {
+    const p = await h.producto({ stock: 0, cost: 30 });
+    const legacy = await historica([linea(p, 3)]);
+    expect((await h.request(h.app).delete(`/api/ventas/${legacy._id}`).set(h.auth(admin.token))).status).toBe(200);
+    expect(await h.stockYCapas(p._id)).toMatchObject({ stock: 3, capas: 3 });
+    expect(await InventoryLayer.findOne({ producto: p._id })).toMatchObject({ unitCost: 30, costSource: 'costo_capturado' });
+    expect((await h.vender(admin.token, [linea(p, 1)])).status).toBe(201);
+  });
+
+  test('producto sin costo: la devolución entra a $0 marcada sin_costo', async () => {
+    const p = await h.producto({ stock: 0, cost: 0 });
+    const legacy = await historica([linea(p, 1)]);
+    expect((await h.request(h.app).delete(`/api/ventas/${legacy._id}`).set(h.auth(admin.token))).status).toBe(200);
+    expect(await InventoryLayer.findOne({ producto: p._id })).toMatchObject({ unitCost: 0, costSource: 'sin_costo' });
+  });
+
+  test('si el inventario del producto ya no cuadra, se rechaza con mensaje claro y no cambia nada', async () => {
     const p = await h.producto({ stock: 8, fifoInitialized: true });
-    await InventoryLayer.create({ producto: p._id, quantity: 8, initialQuantity: 8, remainingQuantity: 8, unitCost: 50, totalCost: 400, source: 'inventario_inicial', isInitialLayer: true, receivedDate: new Date() });
-    const legacy = await Venta.create({ items: [linea(p, 2)], paymentMethod: 'efectivo', saleChannel: 'local', status: 'completada' });
+    await apertura(p, 5, 50);
+    const legacy = await historica([linea(p, 2)]);
     const del = await h.request(h.app).delete(`/api/ventas/${legacy._id}`).set(h.auth(admin.token));
     expect(del.status).toBe(409);
-    expect(await h.stockYCapas(p._id)).toMatchObject({ stock: 8, capas: 8 });
+    expect(del.body.message).toMatch(/no cuadra/);
+    expect(await h.stockYCapas(p._id)).toMatchObject({ stock: 8, capas: 5 });
     expect((await Venta.findById(legacy._id)).status).toBe('completada');
+  });
+
+  test('venta histórica mixta (dos productos): todo o nada en una transacción', async () => {
+    const a = await h.producto({ stock: 4, fifoInitialized: true });
+    await apertura(a, 4, 10);
+    const b = await h.producto({ stock: 6, fifoInitialized: true });
+    await apertura(b, 5, 10); // b no cuadra
+    const legacy = await historica([linea(a, 1), linea(b, 1)]);
+    expect((await h.request(h.app).delete(`/api/ventas/${legacy._id}`).set(h.auth(admin.token))).status).toBe(409);
+    expect(await h.stockYCapas(a._id)).toMatchObject({ stock: 4, capas: 4 });
   });
 
   test('cancelar una venta histórica de un producto sin FIFO conserva el comportamiento original', async () => {

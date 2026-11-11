@@ -14,6 +14,7 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { getCurrentDateGMT7, parseCalendarDate } = require('../helpers/timezone');
 const { consumirFIFOEnVenta } = require('../helpers/consumoFifo');
 const { revertirFIFOEnVenta } = require('../helpers/revertirFifoVenta');
+const { devolverVentaHistorica } = require('../helpers/devolucionVentaHistorica');
 const { validarSincronizacionStockCapas } = require('../helpers/validarSincronizacionStockCapas');
 const { revertirHistorialMedicoYCarnet } = require('../helpers/revertirHistorialMedicoYCarnet');
 const { actualizarHistorialMedicoYCarnet } = require('../helpers/actualizarHistorialMedicoYCarnet');
@@ -1346,29 +1347,10 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
       await revertirFIFOEnVenta(venta._id, uuidv4(), req.user._id, session, 'cancelacion_venta');
       await validarSincronizacionStockCapas(venta._id, session);
     } else {
-      // Venta anterior a FIFO: comportamiento original (sumar al stock), salvo que el producto
-      // ya tenga capas FIFO, porque sumar sin capa desincronizaría el inventario.
-      for (const item of venta.items) {
-        if (item.type !== 'producto') continue;
-        const tieneCapas = await InventoryLayer.exists({ producto: item.item, isActive: true }).session(session);
-        if (tieneCapas) {
-          await session.abortTransaction();
-          session.endSession();
-          return res.status(409).json({
-            success: false,
-            message: 'Esta venta es anterior al control FIFO y alguno de sus productos ya tiene inventario FIFO. La devolución requiere un ajuste de inventario.'
-          });
-        }
-      }
-      for (const item of venta.items) {
-        if (item.type === 'producto') {
-          const producto = await Producto.findById(item.item).session(session);
-          if (producto) {
-            producto.stock += item.quantity;
-            await producto.save({ session });
-          }
-        }
-      }
+      // Venta anterior a FIFO: no registró de qué capa salió la mercancía. La devolución entra como
+      // capa nueva de ajuste con costo estimado (ver helpers/devolucionVentaHistorica.js); si el
+      // producto aún no está en FIFO, solo se suma al stock como antes.
+      await devolverVentaHistorica(venta, req.user._id, session);
     }
 
     // Actualizar status
@@ -1386,6 +1368,9 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     await session.abortTransaction().catch(() => {});
     session.endSession();
     console.error(error);
+    if (error.httpStatus) {
+      return res.status(error.httpStatus).json({ success: false, message: error.message });
+    }
     res.status(500).json({
       success: false,
       message: 'Error al cancelar venta'

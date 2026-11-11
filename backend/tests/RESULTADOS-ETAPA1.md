@@ -272,3 +272,15 @@ Registros que quedan en producción (cancelados/inactivos, no se borraron): prod
 **Defecto encontrado (previo):** el estado de resultados sumaba compras **canceladas** como costo. En producción hoy suma $299.28 (21/ago) y, por esta prueba, $348 en noviembre hasta que se despliegue la corrección. Corregido en el código nuevo (`status != cancelada`) con prueba automática.
 
 Resultado automático: 76 pruebas — **76 pasan**.
+
+# Cancelación de ventas anteriores al despliegue (2026-11-11)
+
+Antes: tras abrir FIFO, cancelar una venta anterior con productos respondía 409 ("requiere un ajuste de inventario", función inexistente). En producción se cancelan ~6–9 ventas al mes (44 de 547; 37 con productos).
+
+Ahora (`helpers/devolucionVentaHistorica.js`, usado por `DELETE /api/ventas/:id` cuando la venta no tiene `fifoTracked`):
+- Si el stock y las capas del producto cuadran: capa nueva `ajuste_entrada` con las piezas devueltas + movimiento de entrada (`source: 'ajuste'`, ligado a la venta, `reversalReason: 'cancelacion_venta'`). Costo estimado: el de la capa de apertura del producto; si no tiene, `Producto.cost`; si tampoco, $0 `sin_costo`.
+- Producto con stock y sin capas (antes de la apertura FIFO): comportamiento anterior (solo suma al stock).
+- Producto agotado y sin capas: la devolución crea su primera capa.
+- Si stock y capas no cuadran: 409 con mensaje claro; toda la cancelación se revierte (transacción).
+- Pruebas: 6 casos nuevos en `10-ventas-fifo.test.js`; batería **81/81**.
+- Ensayo (copia de producción con FIFO abierto), en pantalla: venta del 10/11 de $317 con 2 "Sueter JOSDOG Talla 3" → cancelada; stock 2 → 4; capas: apertura 2 @ $40 + devolución 2 @ $40 (estimado); movimiento de entrada $80.
