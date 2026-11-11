@@ -18,7 +18,7 @@ Quién hace qué:
 | # | Tarea | Quién |
 |---|---|---|
 | A | Capturar el costo de **"Casco para mascota"** en Productos (hoy $0; si no, entra al inventario a $0 "sin costo") | Tú |
-| B | **Variables del backend en Vercel** (proyecto backend → Settings → Environment Variables, entorno *Production*): deben existir `MONGODB_URI`, `JWT_SECRET` y `NODE_ENV=production`. **Bloqueante:** hoy `main` incluye `backend/.env` en el repositorio y esta rama lo quita (tenía la contraseña). Si el backend dependía de ese archivo, sin las variables quedaría desconectado. Si `JWT_SECRET` de Vercel es distinto al del archivo, no pasa nada: Vercel ya usa el suyo | Tú |
+| B | ✅ **Verificado 11/11:** `MONGODB_URI`, `JWT_SECRET` y `NODE_ENV` existen (sensibles, *Production and Preview*). **Variables del backend en Vercel** (proyecto backend → Settings → Environment Variables, entorno *Production*): deben existir `MONGODB_URI`, `JWT_SECRET` y `NODE_ENV=production`. **Bloqueante:** hoy `main` incluye `backend/.env` en el repositorio y esta rama lo quita (tenía la contraseña). Si el backend dependía de ese archivo, sin las variables quedaría desconectado. Si `JWT_SECRET` de Vercel es distinto al del archivo, no pasa nada: Vercel ya usa el suyo | Tú |
 | C | **Cambiar la contraseña** del usuario de Atlas (quedó escrita en el chat y en el historial de GitHub por el `.env`) y poner la nueva en `MONGODB_URI` de Vercel y en `backend/.env` de tu PC. Al cambiar una variable, Vercel necesita *Redeploy* para usarla | Tú |
 | C2 | No hace falta nada para dependencias: Vercel corre `npm install` con el `package.json` (incluye `uuid`) | — |
 | D | Decidir el **correo del administrador** a cuyo nombre se registra la apertura FIFO | Tú |
