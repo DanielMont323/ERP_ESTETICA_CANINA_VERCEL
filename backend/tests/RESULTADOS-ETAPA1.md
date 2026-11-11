@@ -241,3 +241,21 @@ Resultado automático: 75 pruebas — **75 pasan**.
 4. **Verificación final:** 0 índices faltantes; 391 productos activos, 345 con stock (1,726 u., $115,367.06 a costo capturado); sin costo: solo "Casco para mascota".
 
 Pendiente para el día del despliegue (requiere el código nuevo en producción): corrección de fechas (440 + 22 ventas, 432 historial médico) y apertura FIFO. Pendiente del usuario: capturar el costo de "Casco para mascota".
+
+# Ensayo general del despliegue sobre copia exacta de producción (2026-11-11)
+
+Por la regla "prohibido modificar información productiva para facilitar pruebas", las pruebas con escritura se hicieron sobre una copia exacta de producción ya preparada (respaldo `estetica-canica-2026-11-11-preparada`, restaurado como `estetica-canica-ensayo-test` en la instancia local), y en producción solo lecturas.
+
+| Paso | Resultado en el ensayo | Producción (solo lectura) |
+|---|---|---|
+| Corrección de fechas | 440 + 22 ventas, 432 historial; 2ª pasada 0 | Simulación: 440 + 22, 432 ✔ igual |
+| Apertura FIFO | 4.4 s; 391 productos: 345 abiertos, 46 omitidos, 0 fallidos; sin costo: "Casco para mascota"; 2ª corrida: 0 abiertos | 345 activos con stock ✔ igual; Casco sigue en $0 |
+| Consistencia stock vs. capas | 390 productos, 0 inconsistencias | — |
+| Estado de resultados por mes | Ventas: ago y sep iguales; oct +$473, nov −$473 (venta del 31/10 17:26). Gastos: los $398 del 1/oct pasan de septiembre a octubre (antes caían en el mes anterior) | — |
+| Venta en pantalla (2 × Amoxicilina, producto real) | Registrada con fecha 11/11; costo $7.10 desde la capa de apertura | — |
+| Cancelar esa venta | Stock y capa regresan a 159; reversión $7.10 | — |
+| **Cancelar una venta de antes del despliegue** | **409: "requiere un ajuste de inventario"** — esa función no existe todavía | — |
+
+**Bloqueante encontrado:** tras desplegar, ninguna venta anterior con productos se podría cancelar (los productos ya tienen capas FIFO y la venta no tiene movimientos que revertir). Hace falta una devolución de venta histórica (entrada de inventario como ajuste, con costo trazable) antes del despliegue.
+
+Notas para la Etapa 4: el estado de resultados solo suma compras de contado y excluye gastos inactivos ($120 en octubre).
