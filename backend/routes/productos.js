@@ -7,8 +7,17 @@ const Venta = require('../models/Venta');
 const Compra = require('../models/Compra');
 const Servicio = require('../models/Servicio');
 const SupplierProduct = require('../models/SupplierProduct');
+const InventoryLayer = require('../models/InventoryLayer');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
+
+// F12: un producto está bajo control FIFO si fue inicializado o tiene capas activas.
+// En esos productos el stock solo puede cambiar por compras, ventas o ajustes FIFO;
+// editarlo directamente desincroniza stock y capas.
+async function productoBajoFIFO(producto) {
+  if (producto.fifoInitialized === true) return true;
+  return !!(await InventoryLayer.exists({ producto: producto._id, isActive: true }));
+}
 
 // Función auxiliar para verificar si un producto tiene historial
 async function checkProductHistory(productId) {
@@ -528,6 +537,20 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
       }
     }
     
+    // F12: el stock de un producto FIFO no se edita desde aquí.
+    if (rest.stock !== undefined) {
+      const actual = await Producto.findById(req.params.id);
+      if (actual && await productoBajoFIFO(actual)) {
+        if (Number(rest.stock) !== actual.stock) {
+          return res.status(409).json({
+            success: false,
+            message: 'Este producto se controla con inventario FIFO: el stock solo cambia con compras, ventas o ajustes de inventario. Los demás datos se pueden editar.'
+          });
+        }
+        delete rest.stock;
+      }
+    }
+
     const producto = await Producto.findByIdAndUpdate(
       req.params.id,
       {
@@ -663,7 +686,7 @@ router.patch('/:id/restore', authenticateToken, requireAdmin, async (req, res) =
 
 // @route   PATCH /api/productos/:id/stock
 // @desc    Actualizar stock de producto
-router.patch('/:id/stock', async (req, res) => {
+router.patch('/:id/stock', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { quantity, operation } = req.body; // operation: 'add' | 'subtract' | 'set'
     
@@ -675,6 +698,14 @@ router.patch('/:id/stock', async (req, res) => {
       });
     }
     
+    // F12: en productos FIFO este endpoint desincronizaría stock y capas.
+    if (await productoBajoFIFO(producto)) {
+      return res.status(409).json({
+        success: false,
+        message: 'Este producto se controla con inventario FIFO: el stock solo cambia con compras, ventas o ajustes de inventario.'
+      });
+    }
+
     let newStock;
     switch (operation) {
       case 'add':

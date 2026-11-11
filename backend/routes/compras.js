@@ -1407,7 +1407,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
 // @route   DELETE /api/compras/:id
 // @desc    Cancelar compra y devolver stock (protegido con FIFO)
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 

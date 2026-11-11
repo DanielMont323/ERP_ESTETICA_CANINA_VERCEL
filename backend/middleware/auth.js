@@ -3,6 +3,8 @@ const Usuario = require('../models/Usuario');
 
 // Middleware para autenticar token JWT
 const authenticateToken = async (req, res, next) => {
+  // S2: las rutas ya se autentican al montarse; evitar validar dos veces.
+  if (req.user) return next();
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
     

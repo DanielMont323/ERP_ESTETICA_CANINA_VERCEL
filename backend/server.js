@@ -57,25 +57,26 @@ app.use(cors(corsOptions));
 app.use(express.json());
 
 // Routes
+// S2: toda la API exige token, excepto /api/auth y /api/health.
 app.use('/api/auth', authRoutes);
-app.use('/api/productos', productoRoutes);
-app.use('/api/clientes', clienteRoutes);
-app.use('/api/mascotas', mascotaRoutes);
-app.use('/api/servicios', servicioRoutes);
-app.use('/api/ventas', ventaRoutes);
-app.use('/api/proveedores', proveedorRoutes);
-app.use('/api/compras', compraRoutes);
-app.use('/api/cuentas-por-pagar', cuentaPorPagarRoutes);
-app.use('/api/costos', costoRoutes);
-app.use('/api/recordatorios', recordatorioRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/supplier-products', supplierProductRoutes);
-app.use('/api/categorias-producto', categoriaProductoRoutes);
-app.use('/api/carnet-vacunacion', carnetVacunacionRoutes);
-app.use('/api/categorias-servicio', categoriaServicioRoutes);
-app.use('/api/vacunas', vacunaRoutes);
-app.use('/api/clasificaciones-vacunas', clasificacionVacunaRoutes);
-app.use('/api/inventario', inventarioRoutes);
+app.use('/api/productos', authenticateToken, productoRoutes);
+app.use('/api/clientes', authenticateToken, clienteRoutes);
+app.use('/api/mascotas', authenticateToken, mascotaRoutes);
+app.use('/api/servicios', authenticateToken, servicioRoutes);
+app.use('/api/ventas', authenticateToken, ventaRoutes);
+app.use('/api/proveedores', authenticateToken, proveedorRoutes);
+app.use('/api/compras', authenticateToken, compraRoutes);
+app.use('/api/cuentas-por-pagar', authenticateToken, cuentaPorPagarRoutes);
+app.use('/api/costos', authenticateToken, costoRoutes);
+app.use('/api/recordatorios', authenticateToken, recordatorioRoutes);
+app.use('/api/reports', authenticateToken, reportRoutes);
+app.use('/api/supplier-products', authenticateToken, supplierProductRoutes);
+app.use('/api/categorias-producto', authenticateToken, categoriaProductoRoutes);
+app.use('/api/carnet-vacunacion', authenticateToken, carnetVacunacionRoutes);
+app.use('/api/categorias-servicio', authenticateToken, categoriaServicioRoutes);
+app.use('/api/vacunas', authenticateToken, vacunaRoutes);
+app.use('/api/clasificaciones-vacunas', authenticateToken, clasificacionVacunaRoutes);
+app.use('/api/inventario', authenticateToken, inventarioRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

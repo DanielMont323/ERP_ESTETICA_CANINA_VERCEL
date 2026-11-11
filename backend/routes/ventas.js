@@ -983,6 +983,19 @@ router.put('/:id', authenticateToken, async (req, res) => {
       });
     }
 
+    // F19: el estado no se cambia por PUT. Cancelar debe pasar por DELETE (que devuelve
+    // el inventario) y reabrir una venta cancelada no está soportado.
+    if (status !== undefined && status !== venta.status) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(409).json({
+        success: false,
+        message: status === 'cancelada'
+          ? 'Para cancelar una venta usa la opción Cancelar; así se devuelve el inventario.'
+          : 'El estado de la venta no se puede cambiar desde la edición.'
+      });
+    }
+
     // Campos sensibles que solo admin puede modificar
     const sensitiveFields = ['items', 'total', 'commission', 'discount', 'customer', 'mascota', 'amountReceived', 'change', 'paymentMethod', 'saleChannel', 'employeeDiscountApplied', 'employeeDiscountPercentage', 'payments', 'date'];
     const hasSensitiveFields = sensitiveFields.some(field => req.body[field] !== undefined);

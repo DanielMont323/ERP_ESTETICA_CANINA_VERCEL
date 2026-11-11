@@ -10,6 +10,13 @@ beforeEach(async () => {
 });
 afterAll(h.close);
 
+test('S2: con token los endpoints antes abiertos siguen respondiendo', async () => {
+  for (const url of ['/api/clientes', '/api/productos', '/api/servicios', '/api/costos', '/api/ventas']) {
+    const res = await h.request(h.app).get(url).set(h.auth(admin.token));
+    expect([url, res.status]).toEqual([url, 200]);
+  }
+});
+
 async function productoFifo(qty = 10) {
   const p = await h.producto();
   const r = await h.comprar(admin, { proveedor: base.proveedor, productoId: p._id, quantity: qty, unitCost: 50 });
@@ -36,6 +43,51 @@ describe('F12 — cambios de stock que no pasan por FIFO', () => {
     await h.request(h.app).put(`/api/productos/${p._id}`).set(h.auth(admin.token)).send({ name: p.name, stock: 25 });
     const s = await h.stockYCapas(p._id);
     expect(s.stock).toBe(s.capas);
+  });
+});
+
+describe('F12 — regresión: lo que sí debe seguir funcionando', () => {
+  test('PUT de un producto FIFO sin cambiar el stock sí guarda los demás datos', async () => {
+    const p = await productoFifo(4);
+    const res = await h.request(h.app).put(`/api/productos/${p._id}`).set(h.auth(admin.token)).send({ name: 'Nombre editado', stock: 4 });
+    expect(res.status).toBe(200);
+    expect(res.body.data.name).toBe('Nombre editado');
+    expect(await h.stockYCapas(p._id)).toMatchObject({ stock: 4, capas: 4 });
+  });
+
+  test('PATCH /stock sigue funcionando para productos sin FIFO', async () => {
+    const p = await h.producto({ stock: 5 });
+    const res = await h.request(h.app).patch(`/api/productos/${p._id}/stock`).set(h.auth(admin.token)).send({ quantity: 2, operation: 'add' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.stock).toBe(7);
+  });
+
+  test('PATCH /stock con usuario no admin es rechazado (403)', async () => {
+    const p = await h.producto({ stock: 5 });
+    const user = await h.login('user');
+    const res = await h.request(h.app).patch(`/api/productos/${p._id}/stock`).set(h.auth(user.token)).send({ quantity: 2, operation: 'add' });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('F19 — PUT /api/ventas no puede cambiar el estado', () => {
+  test('poner status "cancelada" por PUT es rechazado y no toca inventario', async () => {
+    const p = await productoFifo(3);
+    const v = await h.vender(admin.token, [{ type: 'producto', item: p._id.toString(), quantity: 1, unitPrice: 100 }]);
+    expect(v.status).toBe(201);
+    const user = await h.login('user');
+    const res = await h.request(h.app).put(`/api/ventas/${v.body.data._id}`).set(h.auth(user.token)).send({ status: 'cancelada' });
+    expect(res.status).toBe(409);
+    const venta = await h.models.Venta.findById(v.body.data._id);
+    expect(venta.status).toBe('completada');
+    expect(await h.stockYCapas(p._id)).toMatchObject({ stock: 2, capas: 2 });
+  });
+
+  test('editar notas enviando el mismo status sigue funcionando', async () => {
+    const p = await productoFifo(3);
+    const v = await h.vender(admin.token, [{ type: 'producto', item: p._id.toString(), quantity: 1, unitPrice: 100 }]);
+    const res = await h.request(h.app).put(`/api/ventas/${v.body.data._id}`).set(h.auth(admin.token)).send({ status: 'completada', notes: 'nota' });
+    expect(res.status).toBe(200);
   });
 });
 
@@ -72,7 +124,14 @@ describe('Seguridad — permisos en operaciones sensibles', () => {
     ['GET', '/api/reports/income-statement'],
     ['GET', '/api/clientes'],
     ['GET', '/api/ventas'],
-    ['POST', '/api/servicios']
+    ['POST', '/api/servicios'],
+    ['GET', '/api/productos'],
+    ['GET', '/api/mascotas'],
+    ['GET', '/api/proveedores'],
+    ['GET', '/api/recordatorios'],
+    ['GET', '/api/supplier-products'],
+    ['GET', '/api/categorias-producto'],
+    ['PATCH', '/api/cuentas-por-pagar/000000000000000000000000/status']
   ])('S2: %s %s sin token responde 401', async (method, url) => {
     const res = await h.request(h.app)[method.toLowerCase()](url).send({});
     expect(res.status).toBe(401);

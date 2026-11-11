@@ -97,3 +97,18 @@ Sin cambios: el PUT de compras anteriores a FIFO (sin capas) conserva su lógica
 
 Resultado: 36 pruebas — **26 pasan, 10 fallan**. Todas las de ventas y compras pasan.
 Pendientes: F12 (stock fuera de FIFO), S1, S2 (permisos), F19 (cancelar venta por PUT).
+
+# Etapa 2 — Stock fuera de FIFO y permisos (2026-11-11)
+
+| Defecto | Corrección | Estado |
+|---|---|---|
+| F12 PATCH /productos/:id/stock | Exige token + admin. En productos FIFO (inicializados o con capas activas) responde 409. Productos sin FIFO conservan el comportamiento original | Implementado y probado |
+| F12 PUT /productos/:id | Si el producto es FIFO y el `stock` enviado difiere del actual → 409; si es igual, se ignora y los demás datos se guardan | Implementado y probado |
+| F19 PUT /ventas/:id con `status` | Cambiar el estado por PUT → 409 (cancelar va por DELETE, que devuelve inventario). Enviar el mismo estado sigue funcionando | Implementado y probado |
+| S1 DELETE /compras/:id | `requireAdmin` | Implementado y probado |
+| S2 endpoints abiertos | `authenticateToken` al montar todas las rutas de `/api` excepto `/api/auth` y `/api/health`. `authenticateToken` no revalida si `req.user` ya existe | Implementado y probado (backend). No comprobado en la interfaz real |
+
+Nota: los 10 productos de producción con `fifoInitialized:true` y sin capas quedan bajo la regla F12 (stock no editable) hasta repararlos.
+Decisión pendiente: los permisos por rol (p. ej. si un usuario no admin puede ver costos y reportes) no se cambiaron; S2 solo exige sesión.
+
+Resultado: 49 pruebas — **49 pasan, 0 fallan**.

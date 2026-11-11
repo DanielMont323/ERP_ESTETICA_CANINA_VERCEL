@@ -10,6 +10,7 @@ const app = require('../../server'); // llama a connectDB() con la URI ya valida
 const Usuario = require('../../models/Usuario');
 const Proveedor = require('../../models/Proveedor');
 const Producto = require('../../models/Producto');
+const Venta = require('../../models/Venta');
 const Servicio = require('../../models/Servicio');
 const CategoriaServicio = require('../../models/CategoriaServicio');
 const Cliente = require('../../models/Cliente');
@@ -100,5 +101,5 @@ async function close() {
 
 module.exports = {
   app, request, auth, resetDb, resetAislado, login, seedBase, producto, comprar, vender, stockYCapas, close,
-  models: { Usuario, Proveedor, Producto, Servicio, CategoriaServicio, Cliente, Mascota, InventoryLayer, InventoryMovement }
+  models: { Usuario, Proveedor, Producto, Servicio, CategoriaServicio, Cliente, Mascota, InventoryLayer, InventoryMovement, Venta }
 };
