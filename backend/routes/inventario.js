@@ -5,428 +5,170 @@ const InventoryLayer = require('../models/InventoryLayer');
 const InventoryMovement = require('../models/InventoryMovement');
 const FIFOInitialization = require('../models/FIFOInitialization');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { v4: uuidv4 } = require('uuid');
+const { startOfDayGMT7 } = require('../helpers/timezone');
 const router = express.Router();
 
 // @route   POST /api/inventario/inicializar-fifo
-// @desc    Inicializar el inventario FIFO una sola vez (modo full o continue)
+// @desc    Abre el inventario FIFO: una capa 'inventario_inicial' por producto con stock y sin capas.
+//
+// Reescrito (Etapa 2):
+// - Una transacción POR PRODUCTO: un error en un producto ya no anula a los demás.
+//   El stock se lee dentro de la transacción, así que una venta simultánea no lo desincroniza.
+// - Idempotente: se omite cualquier producto que ya tenga capas activas, sin importar
+//   fifoInitialized. Los productos con fifoInitialized=true y sin capas (estado real de
+//   producción) sí se inicializan (F14). Se puede correr las veces que haga falta.
+// - Costo: Producto.cost marcado como 'costo_capturado' (estimado). Sin costo válido se crea la
+//   capa a $0 con 'sin_costo' para no bloquear la venta; los reportes deben marcarlo sin costo.
+// - El lock siempre se libera (F13: el finally anterior usaba una variable inexistente).
+// - receivedDate = inicio del día de Tepic: la apertura queda antes que las compras del mismo día.
 router.post('/inicializar-fifo', authenticateToken, requireAdmin, async (req, res) => {
-  const { mode = 'full' } = req.query; // 'full' o 'continue'
-  const { skus } = req.body; // Array de SKUs específicos para pruebas (opcional)
+  const LOCK_TIMEOUT_MS = 30 * 60 * 1000;
+  const { skus } = req.body || {};
+  const lockOwnerId = `${req.user._id}-${Date.now()}`;
+  const ahora = new Date();
 
-  // Constante de timeout para locks abandonados (30 minutos)
-  const LOCK_TIMEOUT_MINUTES = 30;
-  const lockOwnerId = req.user._id.toString() + '-' + Date.now();
-  let transactionCommitted = false;
-
-  // Helper: renovar lock (heartbeat)
-  const renewLock = async () => {
-    try {
-      const result = await FIFOInitialization.updateOne(
-        { identifier: 'global', lockOwnerId: lockOwnerId, status: 'in_progress' },
-        { lastAttemptDate: new Date(), lockExpiresAt: new Date(Date.now() + LOCK_TIMEOUT_MINUTES * 60 * 1000) }
-      );
-      return result.modifiedCount > 0;
-    } catch (error) {
-      console.error('Error al renovar lock:', error);
-      return false;
-    }
-  };
-
-  // Helper: verificar ownership del lock
-  const verifyLockOwnership = async () => {
-    const init = await FIFOInitialization.findOne({ identifier: 'global' });
-    return init && init.lockOwnerId === lockOwnerId && init.status === 'in_progress';
-  };
-
-  // Paso 1: Verificar y recuperar locks abandonados (solo si expiró SIN ser nuestro lock)
-  const existingInit = await FIFOInitialization.findOne({ identifier: 'global' });
-  if (existingInit && existingInit.status === 'in_progress') {
-    const timeSinceAttempt = Date.now() - new Date(existingInit.lastAttemptDate).getTime();
-    const timeoutMs = LOCK_TIMEOUT_MINUTES * 60 * 1000;
-
-    // Solo recuperar si expiró Y no es nuestro lock
-    if (timeSinceAttempt > timeoutMs && existingInit.lockOwnerId !== lockOwnerId) {
-      await FIFOInitialization.updateOne(
-        { identifier: 'global', status: 'in_progress', lockOwnerId: existingInit.lockOwnerId },
-        {
-          status: 'failed',
-          notes: `Lock recuperado por timeout (${LOCK_TIMEOUT_MINUTES} minutos excedido sin actividad)`,
-          lockOwnerId: null,
-          lockExpiresAt: null
-        }
-      );
-    } else if (existingInit.lockOwnerId && existingInit.lockOwnerId !== lockOwnerId) {
-      // Lock no expirado, verificar si pertenece a esta solicitud
-      if (existingInit.lockOwnerId && existingInit.lockOwnerId !== lockOwnerId) {
-        return res.status(409).json({
-          success: false,
-          message: 'Ya existe una inicialización en progreso',
-          lastAttemptDate: existingInit.lastAttemptDate,
-          lockExpiresAt: existingInit.lockExpiresAt
-        });
-      }
-    }
-  }
-
-  // Paso 2: Adquirir lock atómico FUERA de transacción
-  const lockExpiresAt = new Date(Date.now() + LOCK_TIMEOUT_MINUTES * 60 * 1000);
-
-  // Primero verificar si existe documento
-  const existingDoc = await FIFOInitialization.findOne({ identifier: 'global' });
-
-  let initialization;
-  if (!existingDoc) {
-    // No existe, crear nuevo con upsert
-    initialization = await FIFOInitialization.create({
+  // Lock atómico: solo se toma si no hay otro vigente.
+  await FIFOInitialization.updateOne(
+    { identifier: 'global' },
+    { $setOnInsert: { identifier: 'global', status: 'pending', attemptCount: 0 } },
+    { upsert: true }
+  );
+  const init = await FIFOInitialization.findOneAndUpdate(
+    {
       identifier: 'global',
-      status: 'in_progress',
-      user: req.user._id,
-      lastAttemptDate: new Date(),
-      lockOwnerId: lockOwnerId,
-      lockExpiresAt: lockExpiresAt,
-      attemptCount: 1
-    });
-  } else if (existingDoc.status !== 'in_progress') {
-    // Existe pero no está en progreso, actualizar
-    initialization = await FIFOInitialization.findOneAndUpdate(
-      { identifier: 'global', _id: existingDoc._id },
-      {
-        status: 'in_progress',
-        user: req.user._id,
-        lastAttemptDate: new Date(),
-        lockOwnerId: lockOwnerId,
-        lockExpiresAt: lockExpiresAt,
-        $inc: { attemptCount: 1 }
-      },
-      { new: true }
-    );
-  } else {
-    // Está en progreso, verificar si es nuestro lock o está expirado
-    const timeSinceAttempt = Date.now() - new Date(existingDoc.lastAttemptDate).getTime();
-    const timeoutMs = LOCK_TIMEOUT_MINUTES * 60 * 1000;
-
-    if (timeSinceAttempt > timeoutMs && existingDoc.lockOwnerId !== lockOwnerId) {
-      // Lock expirado y no es nuestro, recuperar
-      initialization = await FIFOInitialization.findOneAndUpdate(
-        { identifier: 'global', _id: existingDoc._id },
-        {
-          status: 'in_progress',
-          user: req.user._id,
-          lastAttemptDate: new Date(),
-          lockOwnerId: lockOwnerId,
-          lockExpiresAt: lockExpiresAt,
-          $inc: { attemptCount: 1 }
-        },
-        { new: true }
-      );
-    } else if (existingDoc.lockOwnerId === lockOwnerId) {
-      // Es nuestro lock, reutilizar y renovar
-      initialization = existingDoc;
-      await renewLock();
-    } else {
-      // Lock pertenece a otro y no expiró
-      return res.status(409).json({
-        success: false,
-        message: 'Ya existe una inicialización en progreso',
-        lastAttemptDate: existingDoc.lastAttemptDate,
-        lockExpiresAt: existingDoc.lockExpiresAt
-      });
-    }
+      $or: [{ lockOwnerId: null }, { lockOwnerId: { $exists: false } }, { lockExpiresAt: { $lt: ahora } }]
+    },
+    {
+      $set: { status: 'in_progress', user: req.user._id, lastAttemptDate: ahora, lockOwnerId, lockExpiresAt: new Date(Date.now() + LOCK_TIMEOUT_MS) },
+      $inc: { attemptCount: 1 }
+    },
+    { new: true }
+  );
+  if (!init) {
+    const actual = await FIFOInitialization.findOne({ identifier: 'global' });
+    return res.status(409).json({ success: false, message: 'Ya existe una inicialización en progreso', lockExpiresAt: actual && actual.lockExpiresAt });
   }
 
-  // Si no se pudo adquirir el lock
-  if (!initialization) {
-    const currentInit = await FIFOInitialization.findOne({ identifier: 'global' });
-    return res.status(409).json({
-      success: false,
-      message: 'Ya existe una inicialización en progreso',
-      lastAttemptDate: currentInit?.lastAttemptDate,
-      lockExpiresAt: currentInit?.lockExpiresAt
-    });
-  }
-
-  // Verificar si ya está completado (modo full y sin skus específicos)
-  if (mode === 'full' && !skus && initialization.status === 'completed') {
-    // Liberar el lock (solo si pertenece a esta solicitud)
-    if (initialization.lockOwnerId === lockOwnerId) {
-      await FIFOInitialization.updateOne(
-        { identifier: 'global', lockOwnerId: lockOwnerId },
-        {
-          status: 'completed',
-          lockOwnerId: null,
-          lockExpiresAt: null
-        }
-      );
-    }
-    return res.status(400).json({
-      success: false,
-      message: 'El inventario FIFO ya fue inicializado completamente',
-      initializationDate: initialization.initializationDate
-    });
-  }
-
-  // Paso 2: Iniciar transacción para la operación principal
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  const resumen = { productsSuccess: 0, productsSkipped: 0, productsFailed: 0, layersCreated: 0, movementsCreated: 0 };
+  const errores = [];
+  const sinCosto = [];
+  let errorGeneral = null;
 
   try {
+    const filtro = { isActive: { $ne: false }, isDeleted: { $ne: true } };
+    if (Array.isArray(skus) && skus.length > 0) filtro.sku = { $in: skus };
+    const ids = await Producto.find(filtro).distinct('_id');
+    const receivedDate = startOfDayGMT7(ahora);
 
-    // Obtener productos según modo
-    let productos;
-    if (skus && Array.isArray(skus) && skus.length > 0) {
-      // Modo prueba con SKUs específicos
-      if (mode === 'continue') {
-        // En modo continue, filtrar SKUs por los que no tienen capas iniciales
-        const allProductos = await Producto.find({
-          sku: { $in: skus },
-          isActive: true,
-          isDeleted: false
-        }).select('_id name sku cost stock');
-
-        // Filtrar solo los que no tienen capas iniciales
-        const productosIds = allProductos.map(p => p._id);
-        const existingLayers = await InventoryLayer.find({
-          producto: { $in: productosIds },
-          source: 'inventario_inicial',
-          isInitialLayer: true
-        }).select('producto').session(session);
-
-        const productosWithLayers = new Set(existingLayers.map(l => l.producto.toString()));
-        productos = allProductos.filter(p => !productosWithLayers.has(p._id.toString()));
-      } else {
-        // Modo full: todos los SKUs especificados
-        productos = await Producto.find({
-          sku: { $in: skus },
-          isActive: true,
-          isDeleted: false
-        }).select('_id name sku cost stock');
-      }
-    } else if (mode === 'continue') {
-      // Solo productos que fallaron o no fueron procesados
-      const processedIds = initialization.productsProcessedIds || [];
-      productos = await Producto.find({
-        isActive: true,
-        isDeleted: false,
-        _id: { $nin: processedIds }
-      }).select('_id name sku cost stock');
-    } else {
-      // Todos los productos activos
-      productos = await Producto.find({
-        isActive: true,
-        isDeleted: false
-      }).select('_id name sku cost stock');
-    }
-
-    // Solo actualizar productsTotal si no está ya seteado
-    if (initialization.productsTotal === undefined || initialization.productsTotal === 0) {
-      initialization.productsTotal = await Producto.countDocuments({
-        isActive: true,
-        isDeleted: false
-      });
-    }
-    await initialization.save({ session });
-    
-    const errors = [];
-    let layersCreated = 0;
-    let movementsCreated = 0;
-    let productsSuccess = 0;
-    let productsFailed = 0;
-    let productsSkipped = 0;
-    const processedThisAttempt = [];
-    
-    // Procesar cada producto
-    for (const producto of productos) {
-      try {
-        // Validar que tenga costo válido
-        if (!producto.cost || producto.cost < 0) {
-          errors.push({
-            product: producto._id,
-            productName: producto.name,
-            sku: producto.sku,
-            error: 'Costo inválido',
-            reason: `Costo: ${producto.cost}`
-          });
-          productsFailed++;
-          continue;
-        }
-        
-        // Validar que tenga stock positivo
-        if (!producto.stock || producto.stock <= 0) {
-          // Productos sin stock no se inicializan pero no es error
-          productsSkipped++;
-          continue;
-        }
-        
-        // Verificar si ya fue inicializado (idempotencia)
-        if (producto.fifoInitialized) {
-          productsSkipped++; // Marcar como omitido ya que ya estaba inicializado
-          continue;
-        }
-
-        // Verificar si ya existe capa de inventario inicial (idempotencia doble)
-        const existingLayer = await InventoryLayer.findOne({
-          producto: producto._id,
-          source: 'inventario_inicial',
-          isInitialLayer: true
-        }).session(session);
-
-        if (existingLayer) {
-          // Ya existe capa, marcar producto como inicializado pero no crear nueva capa
-          await Producto.findByIdAndUpdate(
-            producto._id,
-            {
-              fifoInitialized: true,
-              fifoInitializationDate: existingLayer.initializationDate || new Date()
-            },
-            { session }
-          );
-          productsSkipped++; // Marcar como omitido ya que ya tenía capa
-          continue;
-        }
-        
-        // Calcular costo total de la capa
-        const totalCost = producto.stock * producto.cost;
-        
-        // Crear capa de inventario inicial
-        const layer = new InventoryLayer({
-          producto: producto._id,
-          quantity: producto.stock,
-          initialQuantity: producto.stock,
-          unitCost: producto.cost,
-          totalCost: totalCost,
-          source: 'inventario_inicial',
-          isInitialLayer: true,
-          initializationDate: new Date(),
-          receivedDate: new Date(),
-          remainingQuantity: producto.stock
-        });
-        
-        await layer.save({ session });
-        layersCreated++;
-        
-        // Crear movimiento de inventario inicial
-        const movement = new InventoryMovement({
-          producto: producto._id,
-          type: 'entrada',
-          quantity: producto.stock,
-          unitCost: producto.cost,
-          totalCost: totalCost,
-          source: 'inventario_inicial',
-          date: new Date(),
-          user: req.user._id,
-          notes: 'Apertura de inventario FIFO'
-        });
-        
-        await movement.save({ session });
-        movementsCreated++;
-        
-        // Marcar producto como inicializado
-        await Producto.findByIdAndUpdate(
-          producto._id,
-          {
-            fifoInitialized: true,
-            fifoInitializationDate: new Date()
-          },
-          { session }
+    for (let i = 0; i < ids.length; i++) {
+      if (i % 25 === 0) {
+        await FIFOInitialization.updateOne(
+          { identifier: 'global', lockOwnerId },
+          { lockExpiresAt: new Date(Date.now() + LOCK_TIMEOUT_MS), lastAttemptDate: new Date() }
         );
-        
-        processedThisAttempt.push(producto._id);
-        productsSuccess++;
-        
-      } catch (error) {
-        errors.push({
-          product: producto._id,
-          productName: producto.name,
-          sku: producto.sku,
-          error: error.message,
-          reason: 'Error al procesar producto'
+      }
+      const session = await mongoose.startSession();
+      try {
+        let resultado = 'omitido';
+        let productoSinCosto = null;
+        await session.withTransaction(async () => {
+          resultado = 'omitido';
+          productoSinCosto = null;
+          const producto = await Producto.findById(ids[i]).session(session);
+          if (!producto || !(producto.stock > 0)) return;
+          const tieneCapas = await InventoryLayer.exists({ producto: producto._id, isActive: true }).session(session);
+          if (tieneCapas) {
+            if (!producto.fifoInitialized) {
+              await Producto.updateOne({ _id: producto._id }, { fifoInitialized: true, fifoInitializationDate: ahora }, { session });
+            }
+            return;
+          }
+          const costoValido = typeof producto.cost === 'number' && producto.cost > 0;
+          const unitCost = costoValido ? producto.cost : 0;
+          const costSource = costoValido ? 'costo_capturado' : 'sin_costo';
+          const totalCost = Math.round(unitCost * producto.stock * 100) / 100;
+          await InventoryLayer.create([{
+            producto: producto._id,
+            quantity: producto.stock,
+            initialQuantity: producto.stock,
+            remainingQuantity: producto.stock,
+            unitCost,
+            totalCost,
+            costSource,
+            source: 'inventario_inicial',
+            isInitialLayer: true,
+            initializationDate: ahora,
+            receivedDate,
+            notes: costoValido ? 'Apertura FIFO: costo capturado del producto (estimado)' : 'Apertura FIFO: producto sin costo capturado'
+          }], { session });
+          await InventoryMovement.create([{
+            producto: producto._id,
+            type: 'entrada',
+            quantity: producto.stock,
+            unitCost,
+            totalCost,
+            source: 'inventario_inicial',
+            date: receivedDate,
+            user: req.user._id,
+            movementId: uuidv4(),
+            notes: `Apertura de inventario FIFO (${costSource})`
+          }], { session });
+          await Producto.updateOne({ _id: producto._id }, { fifoInitialized: true, fifoInitializationDate: ahora }, { session });
+          resultado = 'creado';
+          if (!costoValido) productoSinCosto = { product: producto._id, productName: producto.name, sku: producto.sku, stock: producto.stock };
         });
-        productsFailed++;
+        if (resultado === 'omitido') {
+          resumen.productsSkipped++;
+        } else {
+          resumen.productsSuccess++;
+          resumen.layersCreated++;
+          resumen.movementsCreated++;
+          if (productoSinCosto) sinCosto.push(productoSinCosto);
+        }
+      } catch (e) {
+        resumen.productsFailed++;
+        errores.push({ product: ids[i], error: e.message });
+      } finally {
+        await session.endSession();
       }
     }
-    
-    // Actualizar registro de inicialización
-    const allProcessedIds = [...(initialization.productsProcessedIds || []), ...processedThisAttempt];
-    initialization.productsProcessedIds = allProcessedIds;
-    initialization.productsProcessed = allProcessedIds.length;
-    initialization.productsSuccess = (initialization.productsSuccess || 0) + productsSuccess;
-    initialization.productsFailed = (initialization.productsFailed || 0) + productsFailed;
-    initialization.productsSkipped = (initialization.productsSkipped || 0) + productsSkipped;
-    initialization.layersCreated = (initialization.layersCreated || 0) + layersCreated;
-    initialization.movementsCreated = (initialization.movementsCreated || 0) + movementsCreated;
-    initialization.productsWithErrors = errors;
-    
-    // Determinar status final
-    if (errors.length > 0 && productsSuccess > 0) {
-      initialization.status = 'partial';
-    } else if (errors.length > 0) {
-      initialization.status = 'failed';
-    } else {
-      initialization.status = 'completed';
-      initialization.initializationDate = new Date();
-      initialization.completedAt = new Date();
-    }
-    
-    await initialization.save({ session });
-    
-    await session.commitTransaction();
-    transactionCommitted = true;
+
+    const status = errores.length === 0 ? 'completed' : (resumen.productsSuccess > 0 ? 'partial' : 'failed');
+    await FIFOInitialization.updateOne({ identifier: 'global', lockOwnerId }, {
+      $set: {
+        status,
+        productsTotal: ids.length,
+        productsWithErrors: errores,
+        notes: sinCosto.length ? `${sinCosto.length} producto(s) abiertos con costo $0 (sin costo capturado)` : '',
+        ...(status === 'completed' && { initializationDate: init.initializationDate || ahora, completedAt: new Date() })
+      },
+      $inc: {
+        productsSuccess: resumen.productsSuccess,
+        productsFailed: resumen.productsFailed,
+        productsSkipped: resumen.productsSkipped,
+        layersCreated: resumen.layersCreated,
+        movementsCreated: resumen.movementsCreated
+      }
+    });
 
     res.json({
       success: true,
-      message: initialization.status === 'completed' 
-        ? 'Inicialización FIFO completada exitosamente'
-        : `Inicialización FIFO completada con status: ${initialization.status}`,
-      data: {
-        mode,
-        status: initialization.status,
-        productsProcessed: initialization.productsProcessed,
-        productsTotal: initialization.productsTotal,
-        productsSuccess: initialization.productsSuccess,
-        productsFailed: initialization.productsFailed,
-        productsSkipped: initialization.productsSkipped,
-        layersCreated: initialization.layersCreated,
-        movementsCreated: initialization.movementsCreated,
-        errors: errors,
-        initializationDate: initialization.initializationDate,
-        attemptCount: initialization.attemptCount
-      }
+      message: status === 'completed' ? 'Inicialización FIFO completada' : `Inicialización FIFO con estado: ${status}`,
+      data: { status, productsTotal: ids.length, ...resumen, sinCosto, errors: errores }
     });
-    
-  } catch (error) {
-    await session.abortTransaction();
-
-    console.error('Error en inicialización FIFO:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error al inicializar inventario FIFO',
-      error: error.message
-    });
+  } catch (e) {
+    errorGeneral = e;
+    console.error('Error en inicialización FIFO:', e);
+    res.status(500).json({ success: false, message: 'Error al inicializar inventario FIFO', error: e.message });
   } finally {
-    // Asegurar que la sesión se cierre
-    if (session) {
-      await session.endSession();
-    }
-
-    // Actualizar estado del lock en finally
+    // Siempre liberar el lock (F13).
     try {
-      const currentInit = await FIFOInitialization.findOne({ identifier: 'global' });
-      
-      if (currentInit && currentInit.lockOwnerId === lockOwnerId) {
-        if (!transactionCommitted) {
-          // Transacción no se commitió - marcar como failed si sigue in_progress
-          if (currentInit.status === 'in_progress') {
-            currentInit.status = 'failed';
-            currentInit.notes = error ? error.message : 'Error desconocido';
-          }
-        }
-        // Siempre liberar el lock (tanto en éxito como en fallo)
-        currentInit.lockOwnerId = null;
-        currentInit.lockExpiresAt = null;
-        await currentInit.save();
-      }
-    } catch (finallyError) {
-      console.error('Error al liberar lock en finally:', finallyError);
+      const set = { lockOwnerId: null, lockExpiresAt: null };
+      if (errorGeneral) Object.assign(set, { status: 'failed', notes: errorGeneral.message });
+      await FIFOInitialization.updateOne({ identifier: 'global', lockOwnerId }, { $set: set });
+    } catch (e) {
+      console.error('Error al liberar lock de inicialización FIFO:', e);
     }
   }
 });

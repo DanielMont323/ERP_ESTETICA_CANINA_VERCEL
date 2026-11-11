@@ -33,6 +33,14 @@ const inventoryLayerSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
+  // Trazabilidad del costo (opcional; las capas anteriores no lo tienen):
+  //   'compra'          costo de una compra registrada (comprobado)
+  //   'costo_capturado' Producto.cost al abrir el inventario FIFO (estimado)
+  //   'sin_costo'       el producto no tenía costo: capa a $0, sin costo comprobable
+  costSource: {
+    type: String,
+    enum: ['compra', 'costo_capturado', 'sin_costo']
+  },
   source: {
     type: String,
     enum: ['inventario_inicial', 'compra', 'ajuste_entrada'],

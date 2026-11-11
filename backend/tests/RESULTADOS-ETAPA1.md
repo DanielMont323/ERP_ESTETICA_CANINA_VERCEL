@@ -191,3 +191,26 @@ Queja del cliente: ventas hechas después de cierta hora aparecían al día sigu
 **Pendiente de autorización:** correr el script en producción (primero simulación, revisar, luego `--aplicar --autorizado-por-el-usuario`), junto con el despliegue del código; si se despliega el código sin corregir los datos, las ventas anteriores con el defecto se verían desplazadas.
 
 Resultado automático: 67 pruebas — **67 pasan** (zona del equipo America/Mazatlan y también con `TZ=UTC`).
+
+# Inicialización (apertura) FIFO (2026-11-11)
+
+Defectos del código anterior:
+- **F13 confirmado:** el `finally` usaba una variable `error` inexistente; al fallar, la liberación del lock lanzaba ReferenceError y el lock quedaba tomado.
+- Una sola transacción para ~400 productos: un error dentro abortaba la transacción y todos los productos siguientes fallaban.
+- Productos con `fifoInitialized:true` y sin capas (10 en producción) se omitían → no se podían vender nunca.
+- Productos sin costo hacían fallar la corrida (estado real de producción: `failed`, "Costo inválido").
+- `uuid` se usaba sin estar declarado en `package.json` (venía de `exceljs`).
+
+Reescritura (`POST /api/inventario/inicializar-fifo`):
+- Una transacción por producto; el stock se lee dentro de la transacción.
+- Idempotente por capas activas (no por la bandera); se puede repetir. Si se corta (p. ej. timeout del servidor), se vuelve a correr y continúa.
+- Costo: `Producto.cost` con `costSource: 'costo_capturado'` (**estimado**). Sin costo → capa a $0 `sin_costo`, listada en la respuesta para capturarlo después. Compras nuevas: `costSource: 'compra'` (comprobado). Campo nuevo opcional en `InventoryLayer`.
+- `receivedDate` = inicio del día de Tepic: la apertura se consume antes que compras del mismo día.
+- Lock atómico; siempre se libera; 409 si hay otro vigente; se recupera si venció.
+- Pruebas: `35-inicializacion-fifo.test.js` (8 casos).
+
+Evidencia del costo: en la copia, de 75 productos con stock y compra registrada, 19 difieren >10% entre costo capturado y última compra; la mayoría exactamente ×1.16 (compras con IVA incluido sin marcar). El costo capturado parece neto de IVA; por eso se usa como base estimada.
+
+Ejecución en la **copia local** (vía API, como se haría en producción): 3.7 s; 405 productos: 354 abiertos, 51 omitidos, 0 fallidos; sin costo: "Casco para mascota" y "Producto Test Rollback" (dato de prueba). Valor de apertura: 1,876 unidades, **$124,829.29** a costo capturado (estimado). Verificación de consistencia stock vs. capas: 404 productos, 0 inconsistencias. En pantalla: "Alfadex polvo" (antes rechazado) se vendió; costo de venta $48.75 desde la capa de apertura.
+
+Resultado automático: 75 pruebas — **75 pasan**.

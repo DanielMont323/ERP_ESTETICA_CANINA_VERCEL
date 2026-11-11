@@ -481,6 +481,7 @@ router.post('/', authenticateToken, async (req, res) => {
           unitCost: costoUnitarioFIFO,
           totalCost: costoTotalFIFO,
           source: 'compra',
+          costSource: 'compra',
           purchase: compra[0]._id,
           compraItemIndex: itemIndex,
           supplier: proveedor,
@@ -1207,6 +1208,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
             unitCost: costoUnitarioFIFO,
             totalCost: costoTotalFIFO,
             source: 'compra',
+            costSource: 'compra',
             supplier: compra.proveedor,
             isActive: true,
             receivedDate: compra.date || new Date()
