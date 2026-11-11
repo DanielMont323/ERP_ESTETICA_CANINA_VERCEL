@@ -14,7 +14,7 @@ const router = express.Router();
 
 // Helper para parsear fecha YYYY-MM-DD como fecha de calendario (no UTC con timezone)
 // Usa la función centralizada de timezone.js para evitar desfase
-const { parseCalendarDate } = require('../helpers/timezone');
+const { parseCalendarDate, hoyCalendarioTepic } = require('../helpers/timezone');
 
 // ============================================================================
 // HELPERS FIFO DE COMPRAS
@@ -402,8 +402,7 @@ router.post('/', authenticateToken, async (req, res) => {
     
     if (type === 'credito') {
       // Usar la fecha de compra proporcionada por el usuario, o la fecha actual si no se especifica
-      const { getCurrentDateGMT7 } = require('../helpers/timezone');
-      const purchaseDate = date ? parseCalendarDate(date) : getCurrentDateGMT7();
+      const purchaseDate = date ? parseCalendarDate(date) : hoyCalendarioTepic();
       
       dueDate = new Date(purchaseDate);
       dueDate.setDate(dueDate.getDate() + proveedorDoc.creditDays);
@@ -434,7 +433,8 @@ router.post('/', authenticateToken, async (req, res) => {
       // Si no hay clave, el campo se omite.
       ...(idempotencyKey && { idempotencyKey }),
       // Usar fecha personalizada si se proporciona, si no usa el default del modelo
-      ...(date && { date: parseCalendarDate(date) })
+      // Sin fecha: hoy en Tepic como fecha de calendario (antes el default adelantaba un día)
+      date: date ? parseCalendarDate(date) : hoyCalendarioTepic()
     }], { session });
 
     // Crear capas FIFO y movimientos después de crear la compra
@@ -485,7 +485,7 @@ router.post('/', authenticateToken, async (req, res) => {
           compraItemIndex: itemIndex,
           supplier: proveedor,
           isInitialLayer: false,
-          receivedDate: date ? parseCalendarDate(date) : getCurrentDateGMT7(),
+          receivedDate: compra[0].date,
           remainingQuantity: item.quantity
         });
         await layer.save({ session });
@@ -501,7 +501,7 @@ router.post('/', authenticateToken, async (req, res) => {
           sourceId: compra[0]._id,
           sourceItemIndex: itemIndex,
           sourceVersion: 1,
-          date: date ? parseCalendarDate(date) : getCurrentDateGMT7(),
+          date: compra[0].date,
           user: user,
           notes: `Compra ${receiptNumber || 'N/A'}`
         });

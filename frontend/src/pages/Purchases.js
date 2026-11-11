@@ -6,7 +6,7 @@ import { SkeletonTable } from '../components/Skeleton';
 import Pagination from '../components/Pagination';
 import Autocomplete from '../components/Autocomplete';
 import { useAuth } from '../contexts/AuthContext';
-import { formatCalendarDate } from '../helpers/dateUtils';
+import { formatCalendarDate, hoyTepicISO } from '../helpers/dateUtils';
 import {
   Search,
   Plus,
@@ -932,7 +932,7 @@ const Purchases = () => {
                     type="date"
                     value={formData.date}
                     onChange={(e) => setFormData({...formData, date: e.target.value})}
-                    max={new Date().toISOString().split('T')[0]}
+                    max={hoyTepicISO()}
                     className="form-input"
                   />
                   <p className="text-xs text-gray-500 dark:text-dark-textSecondary mt-1">

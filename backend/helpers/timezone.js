@@ -142,8 +142,24 @@ const endOfDayGMT7FromCalendar = (calendarDate) => {
   return d;
 };
 
+/**
+ * Fecha de calendario de HOY en Tepic (America/Mazatlan, UTC-7 todo el año),
+ * con la convención de fechas de calendario: 12:00 UTC de ese día.
+ * Sustituye a getCurrentDateGMT7 en compras: esa función suma 7 horas en lugar de
+ * restarlas, y a partir de las 10:00 de Tepic devuelve el día siguiente.
+ * @param {Date} [ahora] - Instante de referencia (para pruebas)
+ * @returns {Date}
+ */
+const hoyCalendarioTepic = (ahora = new Date()) => {
+  const ymd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Mazatlan', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(ahora);
+  return createCalendarDate(ymd);
+};
+
 module.exports = {
   getCurrentDateGMT7,
+  hoyCalendarioTepic,
   toGMT7,
   formatGMT7,
   startOfDayGMT7,

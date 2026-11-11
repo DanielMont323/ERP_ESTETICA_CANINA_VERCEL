@@ -3,6 +3,11 @@
  * Estas funciones NO dependen de timezone para evitar desfases
  */
 
+// Hoy en Tepic (America/Mazatlan) como YYYY-MM-DD, sin depender del reloj UTC ni de la zona del equipo.
+export const hoyTepicISO = () => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Mazatlan', year: 'numeric', month: '2-digit', day: '2-digit'
+}).format(new Date());
+
 /**
  * Formatea una fecha de calendario sin depender de timezone
  * Usa componentes UTC para evitar desfase

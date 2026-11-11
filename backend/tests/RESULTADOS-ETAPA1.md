@@ -146,3 +146,18 @@ Hallazgos previos (no causados por estos cambios), pendientes:
 - "Costo" del producto ($100 capturado) difiere del costo FIFO real ($116): la rentabilidad no debe usar `Producto.cost`.
 
 Resultado automático: 50 pruebas — **50 pasan**.
+
+# Fechas de compras (2026-11-11)
+
+Causa: `getCurrentDateGMT7()` **suma** 7 horas al instante UTC en lugar de restarlas. A partir de las 10:00 de Tepic (17:00 UTC) devuelve el día siguiente. Las compras sin fecha elegida tomaban ese valor; la pantalla muestra la fecha con componentes UTC y la fecha máxima del formulario se calculaba en UTC (`toISOString`), así que al editar la compra el formulario la rechazaba como fecha futura.
+
+Corrección (solo compras; ventas, reportes, recordatorios y carnets siguen usando `getCurrentDateGMT7`):
+- Nuevo `hoyCalendarioTepic()`: el día de hoy en America/Mazatlan con la convención de fechas de calendario (12:00 UTC). Lo usan el POST de compras (fecha, vencimiento de crédito, capa FIFO y movimiento) y el default del modelo `Compra`.
+- Frontend: la fecha máxima del formulario de compras usa el día de Tepic (`hoyTepicISO`).
+- Pruebas: `25-fechas-compras.test.js` (horas límite del día, compra sin fecha, edición conservando la fecha).
+- Verificado en pantalla a las 10:3x de Tepic: compra sin fecha → 11/11; edición carga 11/11 y guarda sin error.
+
+Datos existentes (no modificados): 1 de 44 compras históricas aparece un día después (`6a87e0208bd8e5b7c0574a11`: muestra 21/08, registrada el 20/08 22:20 Tepic).
+Pendiente: `getCurrentDateGMT7` afecta igual a ventas (default de `Venta.date`) y a reportes; revisar antes de la Etapa 4.
+
+Resultado automático: 57 pruebas — **57 pasan**.

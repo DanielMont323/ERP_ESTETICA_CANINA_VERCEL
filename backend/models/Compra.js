@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { getCurrentDateGMT7 } = require('../helpers/timezone');
+const { getCurrentDateGMT7, hoyCalendarioTepic } = require('../helpers/timezone');
 
 const itemCompraSchema = new mongoose.Schema({
   product: {
@@ -151,7 +151,8 @@ const compraSchema = new mongoose.Schema({
   },
   date: {
     type: Date,
-    default: getCurrentDateGMT7
+    // Fecha de calendario de Tepic (antes getCurrentDateGMT7, que adelantaba un día después de las 10:00)
+    default: () => hoyCalendarioTepic()
   },
   version: {
     type: Number,
@@ -228,23 +229,20 @@ compraSchema.pre('save', async function(next) {
       const Proveedor = require('./Proveedor');
       const proveedor = await Proveedor.findById(this.proveedor);
       if (proveedor && proveedor.creditDays > 0) {
-        const { getCurrentDateGMT7 } = require('../helpers/timezone');
-        const purchaseDate = getCurrentDateGMT7();
+        const purchaseDate = this.date || hoyCalendarioTepic();
         this.dueDate = new Date(purchaseDate);
         this.dueDate.setDate(this.dueDate.getDate() + proveedor.creditDays);
         console.log(`Compra: dueDate calculado: ${this.dueDate.toISOString()}`);
       } else {
         // Fallback a 30 días si no tiene creditDays configurado
-        const { getCurrentDateGMT7 } = require('../helpers/timezone');
-        const purchaseDate = getCurrentDateGMT7();
+        const purchaseDate = this.date || hoyCalendarioTepic();
         this.dueDate = new Date(purchaseDate);
         this.dueDate.setDate(this.dueDate.getDate() + 30);
         console.log(`Compra: dueDate calculado (fallback 30 días): ${this.dueDate.toISOString()}`);
       }
     } catch (error) {
       // Si hay error al obtener proveedor, usar 30 días por defecto
-      const { getCurrentDateGMT7 } = require('../helpers/timezone');
-      const purchaseDate = getCurrentDateGMT7();
+      const purchaseDate = this.date || hoyCalendarioTepic();
       this.dueDate = new Date(purchaseDate);
       this.dueDate.setDate(this.dueDate.getDate() + 30);
       console.log(`Compra: dueDate calculado (error fallback): ${this.dueDate.toISOString()}`);
