@@ -1,6 +1,6 @@
 # Plan de despliegue: FIFO, fechas de Tepic y permisos
 
-Rama local: `fifo-rentabilidad` (15 commits sobre `main`). Probado en ensayo sobre copia exacta de producción y con pruebas directas en producción (ver `backend/tests/RESULTADOS-ETAPA1.md`).
+Rama local: `fifo-rentabilidad`. Probado en ensayo sobre copia exacta de producción y con pruebas directas en producción (ver `backend/tests/RESULTADOS-ETAPA1.md`).
 
 **Duración estimada:** 30–45 min. **Ventana:** al cierre del día, sin ventas en curso.
 Entre el paso 5 (código nuevo en línea) y el paso 7 (apertura FIFO) **no se puede vender ningún producto**, por eso van seguidos.
