@@ -259,3 +259,16 @@ Por la regla "prohibido modificar información productiva para facilitar pruebas
 **Bloqueante encontrado:** tras desplegar, ninguna venta anterior con productos se podría cancelar (los productos ya tienen capas FIFO y la venta no tiene movimientos que revertir). Hace falta una devolución de venta histórica (entrada de inventario como ajuste, con costo trazable) antes del despliegue.
 
 Notas para la Etapa 4: el estado de resultados solo suma compras de contado y excluye gastos inactivos ($120 en octubre).
+
+# Pruebas en la BD de producción (2026-11-11, regla de no modificar datos productivos retirada por el usuario)
+
+Script `backend/migraciones/2026-11-pruebas-produccion.js`: app nueva en memoria conectada a `estetica-canica`, producto aislado "ZZ PRUEBA SISTEMA FIFO - NO VENDER", proveedor de prueba inactivo, compras de contado (sin deuda de proveedores reales), usuario de prueba con contraseña aleatoria descartada (token firmado localmente). **30/30 pruebas OK**:
+compra con IVA incluido (capa $116, origen "compra", fecha de Tepic); edición de compra (reversión $232, fecha conservada); bloqueos de stock fuera de FIFO (PUT/PATCH 409, sin sesión 401); venta (costo $116 desde la capa, `fifoTracked`, hora de Tepic); bloqueo de cancelar compra vendida; edición de venta; rechazo de cancelar por edición; filtro del día; cancelar venta (stock regresa); cancelar compra (una sola reversión); clientes sin sesión 401; reportes responden; apertura FIFO sin ejecutar.
+
+**No se ejecutó en producción** la apertura FIFO ni la corrección de fechas: con el código actual desplegado, las ventas de la tienda desincronizarían stock y capas. Evidencia de que la corrección de fechas debe ir junto con el despliegue: el estado de resultados de octubre con el código nuevo sobre fechas sin corregir da $111,454.14; en el ensayo, ya corregidas, $113,639.54.
+
+Registros que quedan en producción (cancelados/inactivos, no se borraron): producto ZZ PRUEBA (inactivo, stock 0), 1 compra cancelada, 1 venta cancelada, capas inactivas y movimientos del producto de prueba, usuario "ZZ Prueba Sistema" (rol user, sin contraseña utilizable). IDs en `respaldos-migracion/pruebas-produccion-*.json`.
+
+**Defecto encontrado (previo):** el estado de resultados sumaba compras **canceladas** como costo. En producción hoy suma $299.28 (21/ago) y, por esta prueba, $348 en noviembre hasta que se despliegue la corrección. Corregido en el código nuevo (`status != cancelada`) con prueba automática.
+
+Resultado automático: 76 pruebas — **76 pasan**.

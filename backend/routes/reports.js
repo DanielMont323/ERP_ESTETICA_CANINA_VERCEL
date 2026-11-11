@@ -304,7 +304,9 @@ router.get('/income-statement', async (req, res) => {
     // Costos variables (compras)
     const compras = await Compra.find({
       ...dateFilter,
-      type: 'contado'
+      type: 'contado',
+      // Las compras canceladas no son costo (antes se sumaban)
+      status: { $ne: 'cancelada' }
     });
 
     const totalCompras = compras.reduce((sum, compra) => sum + compra.total, 0);
@@ -1326,7 +1328,9 @@ router.get('/export-sales', async (req, res) => {
     // Compras
     const compras = await Compra.find({
       ...dateFilter,
-      type: 'contado'
+      type: 'contado',
+      // Las compras canceladas no son costo (antes se sumaban)
+      status: { $ne: 'cancelada' }
     });
     const totalCompras = compras.reduce((sum, compra) => sum + compra.total, 0);
 

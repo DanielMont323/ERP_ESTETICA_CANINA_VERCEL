@@ -22,11 +22,11 @@ describe('rangoPeriodoTepic', () => {
 });
 
 describe('ventas después de las 17:00 de Tepic', () => {
-  let admin;
+  let admin, base;
   beforeEach(async () => {
     await h.resetAislado();
     admin = await h.login('admin');
-    await h.seedBase();
+    base = await h.seedBase();
   });
   afterAll(h.close);
 
@@ -51,6 +51,15 @@ describe('ventas después de las 17:00 de Tepic', () => {
     const nov = await h.request(h.app).get('/api/reports/income-statement?startDate=2026-11-01&endDate=2026-11-30').set(h.auth(admin.token));
     expect(oct.body.data.ingresos.totalVentas).toBe(500);
     expect(nov.body.data.ingresos.totalVentas).toBe(70);
+  });
+
+  test('el estado de resultados no cuenta compras canceladas como costo', async () => {
+    const p = await h.producto();
+    const c = await h.comprar(admin, { proveedor: base.proveedor, productoId: p._id, quantity: 2, unitCost: 50, date: '2026-11-05' });
+    const rango = '?startDate=2026-11-01&endDate=2026-11-30';
+    expect((await h.request(h.app).get('/api/reports/income-statement' + rango).set(h.auth(admin.token))).body.data.costos.totalCompras).toBe(100);
+    await h.request(h.app).delete('/api/compras/' + c.body.data._id).set(h.auth(admin.token));
+    expect((await h.request(h.app).get('/api/reports/income-statement' + rango).set(h.auth(admin.token))).body.data.costos.totalCompras).toBe(0);
   });
 
   test('una venta nueva sin fecha toma la hora de Tepic (default del modelo)', () => {
