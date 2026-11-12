@@ -10,6 +10,8 @@ const Proveedor = require('../models/Proveedor');
 const Recordatorio = require('../models/Recordatorio');
 const { startOfDayGMT7, endOfDayGMT7, toGMT7, createCalendarDate, formatCalendarDate, startOfDayGMT7FromCalendar, endOfDayGMT7FromCalendar, rangoPeriodoTepic } = require('../helpers/timezone');
 const ExcelJS = require('exceljs');
+const { requireAdmin } = require('../middleware/auth');
+const { calcularRentabilidad } = require('../helpers/rentabilidad');
 const router = express.Router();
 
 // @route   GET /api/reports/audit-info
@@ -364,6 +366,24 @@ router.get('/income-statement', async (req, res) => {
       success: false,
       message: 'Error al generar estado de resultados'
     });
+  }
+});
+
+// @route   GET /api/reports/profitability
+// @desc    Estado de resultados por devengado: costo de lo vendido con FIFO (verificado) o
+//          estimado en ventas anteriores a FIFO; gastos por categoría. Solo administradores.
+router.get('/profitability', requireAdmin, async (req, res) => {
+  try {
+    const { period, startDate, endDate } = req.query;
+    const rango = rangoPeriodoTepic({ period: period || (startDate && endDate ? undefined : 'month'), startDate, endDate });
+    if (!rango) {
+      return res.status(400).json({ success: false, message: 'Periodo inválido' });
+    }
+    const data = await calcularRentabilidad(rango);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error en /api/reports/profitability:', error);
+    res.status(500).json({ success: false, message: 'Error al calcular la rentabilidad' });
   }
 });
 

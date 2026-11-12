@@ -224,6 +224,7 @@ export const remindersAPI = {
 // Reports services
 export const reportsAPI = {
   getIncomeStatement: (params) => api.get('/reports/income-statement', { params }),
+  getProfitability: (params) => api.get('/reports/profitability', { params }),
   getSalesSummary: (params) => api.get('/reports/sales-summary', { params }),
   getSalesBehavior: (params) => api.get('/reports/sales-behavior', { params }),
   getInventory: () => api.get('/reports/inventory'),

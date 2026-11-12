@@ -6,6 +6,11 @@ import Skeleton, { SkeletonCard } from '../components/Skeleton';
 import { Download, TrendingUp, DollarSign, ShoppingCart, CreditCard, Store, Package } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 
+const NOMBRES_CATEGORIA_GASTO = {
+  renta: 'Renta', servicios: 'Servicios (luz, agua, internet)', nomina: 'Nómina', materiales: 'Materiales',
+  marketing: 'Marketing', mantenimiento: 'Mantenimiento', impuestos: 'Impuestos', otros: 'Otros'
+};
+
 const Reports = () => {
   const [incomeStatement, setIncomeStatement] = useState(null);
   const [salesSummary, setSalesSummary] = useState(null);
@@ -37,12 +42,16 @@ const Reports = () => {
           params.period = selectedPeriod;
         }
 
-        const [incomeRes, salesRes] = await Promise.all([
-          reportsAPI.getIncomeStatement(params),
+        const [profitRes, salesRes] = await Promise.all([
+          // Rentabilidad: solo administradores (403 para el resto → no se muestra la sección)
+          reportsAPI.getProfitability(params).catch(err => {
+            if (err.response?.status === 403) return null;
+            throw err;
+          }),
           reportsAPI.getSalesSummary(params)
         ]);
-        
-        setIncomeStatement(incomeRes.data.data);
+
+        setIncomeStatement(profitRes ? profitRes.data.data : null);
         setSalesSummary(salesRes.data.data);
 
         // Intentar cargar comportamiento de ventas, pero no fallar si hay error
@@ -394,131 +403,202 @@ const Reports = () => {
         </div>
       )}
 
-      {/* Resumen Financiero */}
+      {/* Estado de resultados (rentabilidad real, solo administradores) */}
       {incomeStatement && (
         <div className="card">
-          <div className="card-header">
-            <h3 className="text-base sm:text-lg font-medium text-gray-600 dark:text-dark-textSecondary">RESUMEN DE RESULTADOS FINANCIEROS</h3>
+          <div className="card-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <h3 className="text-base sm:text-lg font-medium text-gray-600 dark:text-dark-textSecondary">ESTADO DE RESULTADOS</h3>
+            <span
+              className={`text-xs font-medium px-2 py-1 rounded-full self-start ${
+                incomeStatement.calidad.pctCostoVerificado >= 90
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-yellow-100 text-yellow-800'
+              }`}
+              title="Porcentaje del costo de productos calculado con las capas FIFO reales; el resto es estimado con el costo actual del producto"
+            >
+              Costo verificado: {incomeStatement.calidad.pctCostoVerificado}%
+            </span>
           </div>
           <div className="card-body">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-              <div className="border-r border-gray-200 dark:border-dark-border pr-4 sm:pr-6 md:border-r md:pr-6 border-b md:border-b pb-4 sm:pb-6 md:pb-0 mb-4 sm:mb-6 md:mb-0">
+              <div className="md:border-r border-gray-200 dark:border-dark-border md:pr-6 border-b md:border-b-0 pb-4 md:pb-0">
                 <h4 className="font-semibold text-gray-600 dark:text-dark-textSecondary mb-3 sm:mb-4 flex items-center">
-                  <span className="w-3 h-3 bg-white dark:bg-dark-card-500 rounded-full mr-2"></span>
+                  <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
                   INGRESOS
                 </h4>
-                <div className="space-y-2 sm:space-y-3">
+                <div className="space-y-2 sm:space-y-3 text-sm sm:text-base">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm sm:text-base text-brand-burgundy">Ventas totales:</span>
-                    <span className="font-semibold text-sm sm:text-base">{formatCurrency(incomeStatement.ingresos.totalVentas)}</span>
+                    <span className="text-brand-burgundy">Venta de productos:</span>
+                    <span className="font-semibold">{formatCurrency(incomeStatement.ventas.productos)}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm sm:text-base text-brand-burgundy">Comisiones:</span>
-                    <span className="font-semibold text-sm sm:text-base text-danger-600">-{formatCurrency(incomeStatement.ingresos.totalComision)}</span>
+                    <span className="text-brand-burgundy">Venta de servicios:</span>
+                    <span className="font-semibold">{formatCurrency(incomeStatement.ventas.servicios)}</span>
                   </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-brand-burgundy">Comisión tarjeta:</span>
+                    <span className="font-semibold text-danger-600">-{formatCurrency(incomeStatement.comisiones.tarjeta)}</span>
+                  </div>
+                  {incomeStatement.comisiones.otras > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-brand-burgundy">Comisiones Mercado Libre / otras:</span>
+                      <span className="font-semibold text-danger-600">-{formatCurrency(incomeStatement.comisiones.otras)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center text-base sm:text-lg font-bold border-t border-gray-200 dark:border-dark-border pt-2 sm:pt-3 mt-2 sm:mt-3">
-                    <span className="text-gray-600 dark:text-dark-textSecondary">Ingreso Neto:</span>
-                    <span className="text-success-600">{formatCurrency(incomeStatement.ingresos.totalIngresoNeto)}</span>
+                    <span className="text-gray-600 dark:text-dark-textSecondary">Ingreso neto:</span>
+                    <span className="text-success-600">{formatCurrency(incomeStatement.ingresoNeto)}</span>
                   </div>
+                  <p className="text-xs text-gray-500 dark:text-dark-textSecondary">{incomeStatement.ventas.cantidad} ventas</p>
                 </div>
               </div>
-              
-              <div className="border-r border-gray-200 dark:border-dark-border pr-4 sm:pr-6">
+
+              <div className="md:border-r border-gray-200 dark:border-dark-border md:pr-6 border-b md:border-b-0 pb-4 md:pb-0">
                 <h4 className="font-semibold text-gray-600 dark:text-dark-textSecondary mb-3 sm:mb-4 flex items-center">
                   <span className="w-3 h-3 bg-red-500 rounded-full mr-2"></span>
-                  GASTOS
+                  COSTOS Y GASTOS
                 </h4>
-                <div className="space-y-2 sm:space-y-3">
+                <div className="space-y-2 sm:space-y-3 text-sm sm:text-base">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm sm:text-base text-brand-burgundy">Compras:</span>
-                    <span className="font-semibold text-sm sm:text-base">{formatCurrency(incomeStatement.costos.totalCompras)}</span>
+                    <span className="text-brand-burgundy" title="Costo real de las capas FIFO consumidas por las ventas">Costo productos (FIFO):</span>
+                    <span className="font-semibold">{formatCurrency(incomeStatement.costoVentas.productosVerificado)}</span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm sm:text-base text-brand-burgundy">Costos fijos:</span>
-                    <span className="font-semibold text-sm sm:text-base">{formatCurrency(incomeStatement.costos.costosFijos)}</span>
+                  {incomeStatement.costoVentas.productosEstimado > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-brand-burgundy" title="Ventas anteriores a FIFO: cantidad × costo actual del producto">Costo productos (estimado):</span>
+                      <span className="font-semibold">{formatCurrency(incomeStatement.costoVentas.productosEstimado)}</span>
+                    </div>
+                  )}
+                  {incomeStatement.costoVentas.insumosServicios > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-brand-burgundy">Insumos de servicios:</span>
+                      <span className="font-semibold">{formatCurrency(incomeStatement.costoVentas.insumosServicios)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center font-semibold border-t border-gray-200 dark:border-dark-border pt-2">
+                    <span className="text-gray-600 dark:text-dark-textSecondary">Costo de lo vendido:</span>
+                    <span className="text-danger-600">{formatCurrency(incomeStatement.costoVentas.total)}</span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm sm:text-base text-brand-burgundy">Costos variables:</span>
-                    <span className="font-semibold text-sm sm:text-base">{formatCurrency(incomeStatement.costos.costosVariables)}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-base sm:text-lg font-bold border-t border-gray-200 dark:border-dark-border pt-2 sm:pt-3 mt-2 sm:mt-3">
-                    <span className="text-gray-600 dark:text-dark-textSecondary">Total Gastos:</span>
-                    <span className="text-danger-600">{formatCurrency(
-                      incomeStatement.costos.totalCompras + 
-                      incomeStatement.costos.costosFijos + 
-                      incomeStatement.costos.costosVariables
-                    )}</span>
+                  <button
+                    type="button"
+                    onClick={handleExpensesClick}
+                    className="w-full text-left pt-2 hover:opacity-80"
+                    title="Ver el detalle de gastos"
+                  >
+                    <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-dark-textSecondary">Gastos de operación</span>
+                    {incomeStatement.gastos.porCategoria.map(c => (
+                      <div key={c.categoria} className="flex justify-between items-center mt-1">
+                        <span className="text-brand-burgundy">{NOMBRES_CATEGORIA_GASTO[c.categoria] || c.categoria}:</span>
+                        <span className="font-semibold">{formatCurrency(c.monto)}</span>
+                      </div>
+                    ))}
+                    {incomeStatement.gastos.porCategoria.length === 0 && (
+                      <p className="text-xs text-gray-500 mt-1">Sin gastos capturados en el periodo</p>
+                    )}
+                  </button>
+                  <div className="flex justify-between items-center font-semibold border-t border-gray-200 dark:border-dark-border pt-2">
+                    <span className="text-gray-600 dark:text-dark-textSecondary">Total gastos:</span>
+                    <span className="text-danger-600">{formatCurrency(incomeStatement.gastos.total)}</span>
                   </div>
                 </div>
               </div>
-              
+
               <div>
-                <h4 className="font-semibold text-gray-600 dark:text-dark-textSecondary mb-4 flex items-center">
+                <h4 className="font-semibold text-gray-600 dark:text-dark-textSecondary mb-3 sm:mb-4 flex items-center">
                   <span className="w-3 h-3 bg-green-500 rounded-full mr-2"></span>
-                  RESULTADO NETO
+                  RESULTADO
                 </h4>
-                <div className="space-y-3">
+                <div className="space-y-2 sm:space-y-3 text-sm sm:text-base">
                   <div className="flex justify-between items-center">
                     <span className="text-brand-burgundy">Utilidad bruta:</span>
-                    <span className="font-semibold">{formatCurrency(incomeStatement.utilidad.utilidadBruta)}</span>
+                    <span className="font-semibold">{formatCurrency(incomeStatement.utilidadBruta)} <span className="text-xs text-gray-500">({incomeStatement.margenBruto}%)</span></span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-brand-burgundy">Utilidad operativa:</span>
-                    <span className="font-semibold">{formatCurrency(incomeStatement.utilidad.utilidadOperativa)}</span>
+                    <span className="text-brand-burgundy" title="Venta de productos menos su costo">Margen en productos:</span>
+                    <span className="font-semibold">{formatCurrency(incomeStatement.margenProductos.utilidad)} <span className="text-xs text-gray-500">({incomeStatement.margenProductos.margen}%)</span></span>
                   </div>
-                  <div className="flex justify-between items-center text-lg font-bold border-t border-gray-200 dark:border-dark-border pt-3 mt-3">
-                    <span className="text-gray-600 dark:text-dark-textSecondary">Resultado Neto:</span>
-                    <span className={`font-bold ${
-                      incomeStatement.utilidad.utilidadOperativa >= 0 ? 'text-success-600' : 'text-danger-600'
-                    }`}>
-                      {formatCurrency(incomeStatement.utilidad.utilidadOperativa)}
+                  <div className="flex justify-between items-center text-base sm:text-lg font-bold border-t border-gray-200 dark:border-dark-border pt-2 sm:pt-3 mt-2 sm:mt-3">
+                    <span className="text-gray-600 dark:text-dark-textSecondary">Utilidad de operación:</span>
+                    <span className={incomeStatement.utilidadOperacion >= 0 ? 'text-success-600' : 'text-danger-600'}>
+                      {formatCurrency(incomeStatement.utilidadOperacion)}
                     </span>
                   </div>
-                  {incomeStatement.utilidad.utilidadOperativa !== 0 && (
-                    <div className="flex justify-between items-center text-sm mt-2">
-                      <span className="text-brand-burgundy">Margen neto:</span>
-                      <span className={`font-semibold ${
-                        incomeStatement.utilidad.utilidadOperativa >= 0 ? 'text-success-600' : 'text-danger-600'
-                      }`}>
-                        {incomeStatement.utilidad.margenOperativo}%
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-brand-burgundy">Margen de operación:</span>
+                    <span className={`font-semibold ${incomeStatement.utilidadOperacion >= 0 ? 'text-success-600' : 'text-danger-600'}`}>
+                      {incomeStatement.margenOperacion}%
+                    </span>
+                  </div>
+                  {incomeStatement.gastos.totalRecurrentesNoCapturados > 0 && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-brand-burgundy" title="Restando los gastos mensuales que no se capturaron en el periodo">Con gastos mensuales faltantes:</span>
+                      <span className={`font-semibold ${incomeStatement.utilidadOperacionAjustada >= 0 ? 'text-success-600' : 'text-danger-600'}`}>
+                        {formatCurrency(incomeStatement.utilidadOperacionAjustada)}
                       </span>
                     </div>
                   )}
                 </div>
               </div>
             </div>
+
+            {(incomeStatement.gastos.recurrentesNoCapturados.length > 0 || incomeStatement.calidad.notas.length > 0) && (
+              <div className="mt-4 sm:mt-6 rounded-lg border border-yellow-300 bg-yellow-50 dark:bg-transparent p-3 sm:p-4 text-sm">
+                {incomeStatement.gastos.recurrentesNoCapturados.length > 0 && (
+                  <div className="mb-2">
+                    <p className="font-semibold text-yellow-800 dark:text-yellow-300">Gastos mensuales sin capturar en el periodo:</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {incomeStatement.gastos.recurrentesNoCapturados.map(f => (
+                        <li key={`${f.descripcion}-${f.mes}`} className="flex justify-between gap-2 text-gray-700 dark:text-dark-textSecondary">
+                          <span>{f.descripcion} ({f.mes})</span>
+                          <span className="font-medium">{formatCurrency(f.monto)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {incomeStatement.calidad.notas.length > 0 && (
+                  <ul className="list-disc pl-5 space-y-0.5 text-gray-700 dark:text-dark-textSecondary">
+                    {incomeStatement.calidad.notas.map(n => <li key={n}>{n}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* Gráficas Principales */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Ingresos vs Gastos */}
+        {/* Ingresos, costos y utilidad */}
         {incomeStatement && (
           <div className="card">
             <div className="card-header">
-              <h3 className="text-lg font-medium text-gray-600 dark:text-dark-textSecondary">INGRESOS VS GASTOS</h3>
+              <h3 className="text-lg font-medium text-gray-600 dark:text-dark-textSecondary">INGRESOS, COSTOS Y UTILIDAD</h3>
             </div>
             <div className="card-body">
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={[
-                  { name: 'Ingresos', valor: incomeStatement.ingresos.totalIngresoNeto },
-                  { name: 'Gastos', valor: incomeStatement.costos.totalCompras + incomeStatement.costos.costosFijos + incomeStatement.costos.costosVariables }
+                  { name: 'Ingreso neto', valor: incomeStatement.ingresoNeto, color: '#3b82f6', onClick: handleSalesClick },
+                  { name: 'Costo vendido', valor: incomeStatement.costoVentas.total, color: '#f59e0b' },
+                  { name: 'Gastos', valor: incomeStatement.gastos.total, color: '#ef4444', onClick: handleExpensesClick },
+                  { name: 'Utilidad', valor: incomeStatement.utilidadOperacion, color: incomeStatement.utilidadOperacion >= 0 ? '#10b981' : '#ef4444' }
                 ]}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis />
                   <Tooltip formatter={(value) => formatCurrency(value)} />
-                  <Legend />
                   <Bar dataKey="valor" name="Monto">
                     {[
-                      { name: 'Ingresos', valor: incomeStatement.ingresos.totalIngresoNeto },
-                      { name: 'Gastos', valor: incomeStatement.costos.totalCompras + incomeStatement.costos.costosFijos + incomeStatement.costos.costosVariables }
+                      { color: '#3b82f6', onClick: handleSalesClick },
+                      { color: '#f59e0b' },
+                      { color: '#ef4444', onClick: handleExpensesClick },
+                      { color: incomeStatement.utilidadOperacion >= 0 ? '#10b981' : '#ef4444' }
                     ].map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        cursor={entry.name === 'Gastos' || entry.name === 'Ingresos' ? 'pointer' : 'default'}
-                        onClick={entry.name === 'Gastos' ? handleExpensesClick : entry.name === 'Ingresos' ? handleSalesClick : undefined}
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={entry.color}
+                        cursor={entry.onClick ? 'pointer' : 'default'}
+                        onClick={entry.onClick}
                       />
                     ))}
                   </Bar>
