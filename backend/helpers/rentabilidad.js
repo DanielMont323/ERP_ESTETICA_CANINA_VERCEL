@@ -176,16 +176,18 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
   const utilidadBruta = t.ingresoNeto - costoVentas;
   const utilidadOperacion = utilidadBruta - totalGastos;
 
+  // Avisos para el dueño del negocio, en lenguaje sencillo (sin términos técnicos).
+  // Los gastos mensuales pendientes se muestran en su propia lista, no aquí.
   const notas = [];
-  if (t.lineasEstimadas > 0) notas.push(`${t.lineasEstimadas} ${t.lineasEstimadas === 1 ? 'línea de producto vendida' : 'líneas de producto vendidas'} antes de FIFO usan el costo actual del producto (estimado).`);
-  if (t.lineasSinCosto > 0) notas.push(`${t.lineasSinCosto} ${t.lineasSinCosto === 1 ? 'línea de producto no tiene' : 'líneas de producto no tienen'} costo: se toma como $0 y la utilidad está sobrestimada.`);
-  if (faltantes.length > 0) {
-    const lista = faltantes.map(f => f.descripcion).join(', ');
-    notas.push(faltantes.length === 1
-      ? `1 gasto mensual no se capturó en el periodo (${lista}).`
-      : `${faltantes.length} gastos mensuales no se capturaron en el periodo (${lista}).`);
+  if (t.lineasEstimadas > 0) {
+    notas.push('El costo de los productos vendidos antes del 12 de noviembre de 2026 es aproximado: '
+      + 'en esas fechas el sistema todavía no guardaba cuánto costó cada pieza vendida, así que se usa su costo actual. '
+      + 'Las ventas desde el 12 de noviembre ya tienen su costo exacto.');
   }
-  if (t.ventasServicios > 0 && t.insumosServicios === 0) notas.push('Los servicios no tienen insumos configurados: su costo de materiales está dentro de los gastos de operación.');
+  if (t.lineasSinCosto > 0) {
+    notas.push(`${t.lineasSinCosto === 1 ? 'Un producto vendido no tiene' : `${t.lineasSinCosto} productos vendidos no tienen`} `
+      + 'costo capturado; por eso la ganancia puede verse mayor a la real. Captura su costo en Productos.');
+  }
 
   return {
     periodo: { start: rango.start, end: rango.end },

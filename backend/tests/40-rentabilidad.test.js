@@ -53,7 +53,7 @@ test('una venta anterior a FIFO usa el costo actual del producto y se marca como
   expect(d.costoVentas.productosEstimado).toBe(30);
   expect(d.costoVentas.productosVerificado).toBe(0);
   expect(d.calidad).toMatchObject({ ventasHistoricas: 1, ventasFifo: 0, lineasEstimadas: 1, lineasSinCosto: 1, pctCostoVerificado: 0 });
-  expect(d.calidad.notas.join(' ')).toMatch(/estimado/);
+  expect(d.calidad.notas.join(' ')).toMatch(/aproximado/);
 });
 
 test('ventas canceladas no cuentan; una venta editada cuenta solo su costo vigente', async () => {
