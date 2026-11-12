@@ -17,6 +17,17 @@ import {
   MinusCircle
 } from 'lucide-react';
 
+// Compra que se borró y se reconstruyó desde su recordatorio de pago: no tiene productos.
+const CompraRecuperadaAviso = ({ purchase }) => (
+  <div
+    className="text-xs text-yellow-800 dark:text-yellow-300"
+    title={purchase.recuperada?.nota || 'Compra recuperada sin productos'}
+  >
+    <span className="inline-block px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 font-medium mb-1">Recuperada</span>
+    <span className="block">Sin productos. Monto por confirmar con la factura.</span>
+  </div>
+);
+
 const Purchases = () => {
   const { user } = useAuth();
   const [purchases, setPurchases] = useState([]);
@@ -688,7 +699,7 @@ const Purchases = () => {
                   </p>
                 </div>
                 <div className="flex space-x-2">
-                  {user?.role === 'admin' && (
+                  {user?.role === 'admin' && !purchase.recuperada?.origen && (
                     <button
                       onClick={() => handleEditClick(purchase)}
                       disabled={purchase.status === 'cancelada'}
@@ -709,6 +720,7 @@ const Purchases = () => {
               </div>
               
               <div className="text-sm">
+                {purchase.recuperada?.origen && <CompraRecuperadaAviso purchase={purchase} />}
                 {purchase.items?.map((item, idx) => (
                   <div key={idx} className="text-gray-600 dark:text-dark-textSecondary">
                     <span className="truncate block">{item.productName || item.product?.name || 'Producto no disponible'}</span> x {item.quantity}
@@ -768,6 +780,7 @@ const Purchases = () => {
                     <span className="truncate block" title={purchase.invoice || '-'}>{purchase.invoice || '-'}</span>
                   </td>
                   <td className="py-5">
+                    {purchase.recuperada?.origen && <CompraRecuperadaAviso purchase={purchase} />}
                     {purchase.items?.map((item, idx) => (
                       <div key={idx} className="text-sm">
                         <span className="truncate block" title={item.productName || item.product?.name || 'Producto no disponible'}>{item.productName || item.product?.name || 'Producto no disponible'}</span> x {item.quantity}
@@ -802,14 +815,16 @@ const Purchases = () => {
                   </td>
                   {user?.role === 'admin' && (
                     <td className="py-5 flex space-x-2">
-                      <button
-                        onClick={() => handleEditClick(purchase)}
-                        disabled={purchase.status === 'cancelada'}
-                        className="text-blue-600 hover:text-blue-800 disabled:text-gray-400 dark:text-dark-textSecondary disabled:cursor-not-allowed"
-                        title="Editar compra"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
+                      {!purchase.recuperada?.origen && (
+                        <button
+                          onClick={() => handleEditClick(purchase)}
+                          disabled={purchase.status === 'cancelada'}
+                          className="text-blue-600 hover:text-blue-800 disabled:text-gray-400 dark:text-dark-textSecondary disabled:cursor-not-allowed"
+                          title="Editar compra"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                      )}
                       {purchase.status !== 'cancelada' && (
                         <button
                           onClick={() => handleCancelPurchase(purchase._id)}

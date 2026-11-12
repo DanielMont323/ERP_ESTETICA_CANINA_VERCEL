@@ -699,6 +699,16 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
       }
     }
 
+    // Compra recuperada (sin productos): editarla por esta ruta sumaría al inventario mercancía que
+    // ya estaba contada. Se completa con su factura por un proceso aparte.
+    const compraBase = await Compra.findById(req.params.id).select('recuperada').lean();
+    if (Compra.esCompraRecuperada(compraBase)) {
+      return res.status(409).json({
+        success: false,
+        message: 'Esta compra fue recuperada sin productos y no se puede editar aquí. Sus pagos se registran en Cuentas por Pagar.'
+      });
+    }
+
     // Paso 1: Adquirir lock atómicamente (fuera del loop de reintentos)
     lockToken = await acquireLock(req.params.id, lockDurationMs);
     if (!lockToken) {

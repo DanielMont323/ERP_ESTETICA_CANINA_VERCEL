@@ -168,11 +168,33 @@ const compraSchema = new mongoose.Schema({
   lockExpiresAt: {
     type: Date,
     sparse: true
+  },
+  // Compra borrada que se reconstruyó sin productos (p. ej. desde su recordatorio de pago).
+  // No tiene productos, no mueve inventario ni capas FIFO; su total es el monto recuperado.
+  recuperada: {
+    origen: { type: String, enum: ['recordatorio_pago'] },
+    recordatorio: { type: mongoose.Schema.Types.ObjectId, ref: 'Recordatorio' },
+    referenciaOriginal: { type: String, trim: true }, // folio o _id de la compra borrada
+    monto: { type: Number, min: 0 },
+    restauradaEl: { type: Date },
+    nota: { type: String, trim: true }
   }
 });
 
+const esCompraRecuperada = compra => Boolean(compra && compra.recuperada && compra.recuperada.origen);
+
 // Calcular totales antes de guardar
 compraSchema.pre('save', async function(next) {
+  // Compra recuperada sin productos: el total es el monto recuperado (no hay items de dónde calcularlo)
+  if (esCompraRecuperada(this) && this.items.length === 0) {
+    const monto = Math.round((this.recuperada.monto || 0) * 100) / 100;
+    this.baseTotal = monto;
+    this.totalDiscount = 0;
+    this.totalIVA = 0;
+    this.total = monto;
+    return next();
+  }
+
   // Calcular subtotal, descuentos e IVA de cada item
   let baseTotal = 0;
   let totalDiscount = 0;
@@ -265,3 +287,4 @@ compraSchema.methods.checkDueDate = function() {
 };
 
 module.exports = mongoose.model('Compra', compraSchema);
+module.exports.esCompraRecuperada = esCompraRecuperada;
