@@ -119,13 +119,12 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
     const total = v.total || 0;
     const neto = typeof v.netIncome === 'number' ? v.netIncome : total;
     const tarjeta = v.cardCommission || 0;
-    // La comisión de tarjeta (4.06%) se le cobra al cliente aparte en la terminal: el total de la
-    // venta no la incluye y la tienda no la absorbe, así que NO se resta. netIncome guardado sí la
-    // resta, por eso se vuelve a sumar. Solo se restan las comisiones que paga la tienda
-    // (Mercado Libre / comisión manual).
+    // La comisión de tarjeta (4.06%) la absorbe la tienda (confirmado por el cliente 2026-11-12):
+    // el cliente paga el total y el banco descuenta la comisión. Se resta igual que la de
+    // Mercado Libre / comisión manual (netIncome guardado ya las descuenta).
     const otras = Math.max(0, total - neto - tarjeta);
     t.total += total;
-    t.ingresoNeto += total - otras;
+    t.ingresoNeto += neto;
     t.comisionTarjeta += tarjeta;
     t.otrasComisiones += otras;
 
@@ -203,10 +202,9 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
       servicios: r2(t.ventasServicios)
     },
     comisiones: {
-      // Informativo: cobrada al cliente, no afecta la ganancia
-      tarjetaCobradaAlCliente: r2(t.comisionTarjeta),
+      tarjeta: r2(t.comisionTarjeta),
       otras: r2(t.otrasComisiones),
-      total: r2(t.otrasComisiones)
+      total: r2(t.comisionTarjeta + t.otrasComisiones)
     },
     ingresoNeto: r2(t.ingresoNeto),
     costoVentas: {
