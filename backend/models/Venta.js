@@ -326,7 +326,11 @@ ventaSchema.pre('save', function(next) {
   
   // Calcular ingreso neto (total - commission - cardCommission)
   // Nota: commission ahora es un campo manual para uso administrativo
-  this.netIncome = Math.round((this.total - (this.commission || 0) - this.cardCommission) * 100) / 100;
+  // Mercado Libre con ajuste manual: se respeta el ingreso neto capturado (lo que deposita ML después
+  // de su comisión). Antes se sobrescribía aquí con el total y la comisión de ML se perdía.
+  if (!isMercadoLibreManual) {
+    this.netIncome = Math.round((this.total - (this.commission || 0) - this.cardCommission) * 100) / 100;
+  }
   
   next();
 });

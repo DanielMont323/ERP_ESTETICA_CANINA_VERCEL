@@ -448,10 +448,6 @@ const Reports = () => {
                       <span className="text-brand-burgundy">Servicios:</span>
                       <span className="font-semibold">{formatCurrency(r.ventas.servicios)}</span>
                     </div>
-                    <div className="flex justify-between items-center gap-2">
-                      <span className="text-brand-burgundy">Comisión por pagos con tarjeta:</span>
-                      <span className="font-semibold text-danger-600">-{formatCurrency(r.comisiones.tarjeta)}</span>
-                    </div>
                     {r.comisiones.otras > 0 && (
                       <div className="flex justify-between items-center gap-2">
                         <span className="text-brand-burgundy">Comisión de Mercado Libre:</span>
@@ -462,7 +458,12 @@ const Reports = () => {
                       <span className="text-gray-600 dark:text-dark-textSecondary">Lo que entró:</span>
                       <span className="text-success-600">{formatCurrency(r.ingresoNeto)}</span>
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-dark-textSecondary">{r.ventas.cantidad} ventas, ya sin comisiones</p>
+                    <p className="text-xs text-gray-500 dark:text-dark-textSecondary">
+                      {r.ventas.cantidad} ventas
+                      {r.comisiones.tarjetaCobradaAlCliente > 0 && (
+                        <>. Además se cobraron {formatCurrency(r.comisiones.tarjetaCobradaAlCliente)} de comisión de tarjeta a los clientes (no cuenta como ingreso ni como gasto).</>
+                      )}
+                    </p>
                   </div>
                 </div>
 

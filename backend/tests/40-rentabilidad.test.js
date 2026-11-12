@@ -70,15 +70,27 @@ test('ventas canceladas no cuentan; una venta editada cuenta solo su costo vigen
   expect(d.costoVentas.productosVerificado).toBe(50);
 });
 
-test('comisión de tarjeta separada del ingreso neto', async () => {
+test('la comisión de tarjeta la paga el cliente: no se resta de lo que entró', async () => {
   await Venta.create({
     items: [{ type: 'servicio', item: new mongoose.Types.ObjectId(), quantity: 1, unitPrice: 1000 }],
     payments: [{ method: 'tarjeta', amount: 1000 }], saleChannel: 'local', status: 'completada'
   });
   const d = (await reporte()).body.data;
   expect(d.ventas.servicios).toBe(1000);
-  expect(d.comisiones.tarjeta).toBe(40.6);
-  expect(d.ingresoNeto).toBe(959.4);
+  expect(d.comisiones.tarjetaCobradaAlCliente).toBe(40.6);
+  expect(d.comisiones.total).toBe(0);
+  expect(d.ingresoNeto).toBe(1000);
+});
+
+test('la comisión de Mercado Libre sí se resta', async () => {
+  await Venta.create({
+    items: [{ type: 'producto', item: (await h.producto({ cost: 0 }))._id, quantity: 1, unitPrice: 500, subtotal: 500, subtotalAfterDiscount: 500 }],
+    payments: [{ method: 'transferencia', amount: 500 }], saleChannel: 'mercado_libre', manualFinancials: true,
+    subtotal: 500, total: 500, netIncome: 410, status: 'completada'
+  });
+  const d = (await reporte()).body.data;
+  expect(d.comisiones.otras).toBe(90);
+  expect(d.ingresoNeto).toBe(410);
 });
 
 test('solo administradores pueden ver la rentabilidad', async () => {
