@@ -41,6 +41,48 @@ api.interceptors.response.use(
   }
 );
 
+// Evita registros duplicados por doble clic en TODOS los módulos.
+// Si se envía una petición que crea o modifica datos (POST/PUT/PATCH/DELETE) idéntica a otra
+// —mismo método, URL, cuerpo y parámetros— que sigue en curso o terminó hace menos de 2 s,
+// no se manda otra vez al servidor: se devuelve el resultado de la primera.
+// Si la primera falla, se puede reintentar de inmediato.
+const VENTANA_DUPLICADOS_MS = 2000;
+const peticionesRecientes = new Map();
+const metodosOriginales = {
+  post: api.post.bind(api),
+  put: api.put.bind(api),
+  patch: api.patch.bind(api),
+  delete: api.delete.bind(api),
+};
+const sinDuplicados = metodo => (url, ...args) => {
+  const data = metodo === 'delete' ? undefined : args[0];
+  const config = (metodo === 'delete' ? args[0] : args[1]) || {};
+  if (typeof FormData !== 'undefined' && data instanceof FormData) return metodosOriginales[metodo](url, ...args);
+  let clave;
+  try {
+    clave = `${metodo} ${url} ${JSON.stringify(data ?? null)} ${JSON.stringify(config.params ?? null)}`;
+  } catch {
+    return metodosOriginales[metodo](url, ...args);
+  }
+  const previa = peticionesRecientes.get(clave);
+  if (previa) return previa;
+  const peticion = metodosOriginales[metodo](url, ...args);
+  peticionesRecientes.set(clave, peticion);
+  peticion.then(
+    () => setTimeout(() => {
+      if (peticionesRecientes.get(clave) === peticion) peticionesRecientes.delete(clave);
+    }, VENTANA_DUPLICADOS_MS),
+    () => {
+      if (peticionesRecientes.get(clave) === peticion) peticionesRecientes.delete(clave);
+    }
+  );
+  return peticion;
+};
+api.post = sinDuplicados('post');
+api.put = sinDuplicados('put');
+api.patch = sinDuplicados('patch');
+api.delete = sinDuplicados('delete');
+
 // Auth services
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
