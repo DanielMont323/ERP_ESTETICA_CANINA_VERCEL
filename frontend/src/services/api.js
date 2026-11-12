@@ -221,6 +221,12 @@ export const remindersAPI = {
   getDashboard: () => api.get('/recordatorios/dashboard'),
 };
 
+// Inventario (ajustes manuales)
+export const inventoryAPI = {
+  getAdjustments: (params) => api.get('/inventario/ajustes', { params }),
+  createAdjustment: (data) => api.post('/inventario/ajustes', data),
+};
+
 // Reports services
 export const reportsAPI = {
   getIncomeStatement: (params) => api.get('/reports/income-statement', { params }),

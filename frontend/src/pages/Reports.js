@@ -500,9 +500,21 @@ const Reports = () => {
                         <p className="text-xs text-gray-500 mt-1">No hay gastos registrados en este periodo</p>
                       )}
                     </button>
+                    {r.ajustesInventario && r.ajustesInventario.registros > 0 && (
+                      <div>
+                        <div className="flex justify-between items-center gap-2">
+                          <span className="text-brand-burgundy">Mermas y ajustes de inventario:</span>
+                          <span className="font-semibold">{formatCurrency(r.ajustesInventario.neto)}</span>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-dark-textSecondary">
+                          Mercancía dañada, perdida o usada en el negocio
+                          {r.ajustesInventario.sobrantes > 0 ? `, menos ${formatCurrency(r.ajustesInventario.sobrantes)} de sobrantes encontrados` : ''}
+                        </p>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center gap-2 text-base sm:text-lg font-bold border-t border-gray-200 dark:border-dark-border pt-2 sm:pt-3">
                       <span className="text-gray-600 dark:text-dark-textSecondary">Total gastado:</span>
-                      <span className="text-danger-600">{formatCurrency(r.costoVentas.total + r.gastos.total)}</span>
+                      <span className="text-danger-600">{formatCurrency(r.costoVentas.total + r.gastos.total + (r.ajustesInventario ? r.ajustesInventario.neto : 0))}</span>
                     </div>
                   </div>
                 </div>

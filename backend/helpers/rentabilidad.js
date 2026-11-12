@@ -178,7 +178,16 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
   const costoProductos = t.costoVerificado + t.costoEstimado;
   const costoVentas = costoProductos + t.insumosServicios;
   const utilidadBruta = t.ingresoNeto - costoVentas;
-  const utilidadOperacion = utilidadBruta - totalGastos;
+  // Ajustes manuales de inventario del periodo: mermas/faltantes (salidas) menos sobrantes (entradas),
+  // valuados al costo FIFO de las capas. Una merma es mercancía que se pagó y no se vendió.
+  const ajustes = await InventoryMovement.find({
+    ...filtroFecha, source: 'ajuste', type: { $in: ['ajuste_entrada', 'ajuste_salida'] }
+  }).select('type totalCost').lean();
+  const mermas = ajustes.filter(a => a.type === 'ajuste_salida').reduce((s, a) => s + (a.totalCost || 0), 0);
+  const sobrantes = ajustes.filter(a => a.type === 'ajuste_entrada').reduce((s, a) => s + (a.totalCost || 0), 0);
+  const ajusteNeto = mermas - sobrantes;
+
+  const utilidadOperacion = utilidadBruta - totalGastos - ajusteNeto;
 
   // Avisos para el dueño del negocio, en lenguaje sencillo (sin términos técnicos).
   // Los gastos mensuales pendientes se muestran en su propia lista, no aquí.
@@ -227,6 +236,12 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
       porCategoria: [...porCategoria.values()].map(c => ({ ...c, monto: r2(c.monto) })).sort((a, b) => b.monto - a.monto),
       recurrentesNoCapturados: faltantes,
       totalRecurrentesNoCapturados: r2(totalFaltantes)
+    },
+    ajustesInventario: {
+      mermas: r2(mermas),
+      sobrantes: r2(sobrantes),
+      neto: r2(ajusteNeto),
+      registros: ajustes.length
     },
     utilidadOperacion: r2(utilidadOperacion),
     margenOperacion: pct(utilidadOperacion, t.ingresoNeto),

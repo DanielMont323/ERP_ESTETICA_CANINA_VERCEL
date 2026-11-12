@@ -146,7 +146,15 @@ const inventoryMovementSchema = new mongoose.Schema({
     type: String,
     enum: ['edicion_venta', 'cancelacion_venta', 'error_correccion', null],
     default: null
-  }
+  },
+  // Motivo de un ajuste manual de inventario (pantalla Ajustes de Inventario)
+  adjustmentReason: {
+    type: String,
+    enum: ['merma', 'conteo_fisico', 'uso_interno', 'regalo', 'devolucion_cliente', 'otro']
+  },
+  // Conteo físico: lo que había en el sistema y lo que se contó
+  stockAntes: { type: Number },
+  stockContado: { type: Number }
 }, {
   timestamps: true
 });

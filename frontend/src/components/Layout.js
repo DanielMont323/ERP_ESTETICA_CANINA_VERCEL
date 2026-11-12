@@ -25,6 +25,7 @@ import {
   Syringe,
   Tag,
   Box,
+  ClipboardCheck,
   Sun,
   Moon
 } from 'lucide-react';
@@ -112,6 +113,7 @@ const Layout = () => {
     { name: 'Productos', href: '/products', icon: Package, shortcut: 'F2' },
     { name: 'Categorías Productos', href: '/product-categories', icon: Tag },
     { name: 'Pedidos Proveedores', href: '/low-stock-orders', icon: Box },
+    ...(user?.role === 'admin' ? [{ name: 'Ajustes de Inventario', href: '/inventory-adjustments', icon: ClipboardCheck }] : []),
     { name: 'Ventas', href: '/sales', icon: ShoppingCart, shortcut: 'F5' },
     { name: 'Compras', href: '/purchases', icon: PurchasesIcon, shortcut: 'F4' },
     { name: 'Clientes', href: '/customers', icon: Users, shortcut: 'F6' },

@@ -7,6 +7,7 @@ const FIFOInitialization = require('../models/FIFOInitialization');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const { startOfDayGMT7 } = require('../helpers/timezone');
+const { ajustarInventario } = require('../helpers/ajusteInventario');
 const router = express.Router();
 
 // @route   POST /api/inventario/inicializar-fifo
@@ -268,6 +269,53 @@ router.get('/verificar-consistencia', authenticateToken, async (req, res) => {
       success: false,
       message: 'Error al verificar consistencia'
     });
+  }
+});
+
+// @route   POST /api/inventario/ajustes
+// @desc    Ajuste manual de inventario (merma, conteo físico, uso interno, sobrante). Solo admin.
+//          Body: { producto, tipo: 'entrada'|'salida', cantidad, motivo, notas?, costoUnitario?,
+//                  stockEsperado?, stockContado? }
+router.post('/ajustes', authenticateToken, requireAdmin, async (req, res) => {
+  const { producto, tipo, cantidad, motivo, notas, costoUnitario, stockEsperado, stockContado } = req.body;
+  const session = await mongoose.startSession();
+  try {
+    let resultado;
+    await session.withTransaction(async () => {
+      resultado = await ajustarInventario({
+        productoId: producto, tipo, cantidad, motivo, notas, costoUnitario, stockEsperado, stockContado, userId: req.user._id
+      }, session);
+    });
+    res.status(201).json({
+      success: true,
+      message: `Ajuste registrado: stock de ${resultado.stockAntes} a ${resultado.stockDespues}`,
+      data: resultado
+    });
+  } catch (error) {
+    if (!error.httpStatus) console.error('Error en ajuste de inventario:', error);
+    res.status(error.httpStatus || 500).json({ success: false, message: error.httpStatus ? error.message : 'Error al registrar el ajuste' });
+  } finally {
+    await session.endSession();
+  }
+});
+
+// @route   GET /api/inventario/ajustes
+// @desc    Historial de ajustes manuales (más recientes primero). Query: producto?, limit?
+router.get('/ajustes', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const filtro = { source: 'ajuste', type: { $in: ['ajuste_entrada', 'ajuste_salida'] } };
+    if (req.query.producto && mongoose.isValidObjectId(req.query.producto)) filtro.producto = req.query.producto;
+    const ajustes = await InventoryMovement.find(filtro)
+      .sort({ date: -1, _id: -1 }).limit(limit)
+      .populate('producto', 'name sku')
+      .populate('user', 'name')
+      .select('producto type quantity unitCost totalCost adjustmentReason notes date user stockAntes stockContado')
+      .lean();
+    res.json({ success: true, data: ajustes });
+  } catch (error) {
+    console.error('Error al obtener ajustes:', error);
+    res.status(500).json({ success: false, message: 'Error al obtener los ajustes' });
   }
 });
 

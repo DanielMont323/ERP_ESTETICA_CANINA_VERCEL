@@ -23,6 +23,7 @@ import ServiceCategories from './pages/ServiceCategories';
 import VaccinationCards from './pages/VaccinationCards';
 import VaccinesCatalog from './pages/VaccinesCatalog';
 import LowStockOrders from './pages/LowStockOrders';
+import InventoryAdjustments from './pages/InventoryAdjustments';
 
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
@@ -101,6 +102,7 @@ function App() {
                 <Route path="reports" element={<Reports />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="low-stock-orders" element={<LowStockOrders />} />
+                <Route path="inventory-adjustments" element={<InventoryAdjustments />} />
               </Route>
               
               {/* Fallback */}
