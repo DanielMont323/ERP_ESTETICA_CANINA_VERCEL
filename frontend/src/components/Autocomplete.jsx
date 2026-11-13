@@ -205,6 +205,8 @@ const Autocomplete = ({
           setIsOpen(false);
         }
         break;
+      default:
+        break;
     }
   };
 
