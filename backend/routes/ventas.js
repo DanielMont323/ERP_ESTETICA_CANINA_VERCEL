@@ -94,6 +94,9 @@ router.get('/', async (req, res) => {
     const ventas = await Venta.find(query)
       .populate('customer', 'name phone')
       .populate('user', 'name')
+      // Nombre de la mascota para mostrarlo en la lista (venta y servicios)
+      .populate('mascota', 'name breed')
+      .populate('items.mascota', 'name')
       .sort({ date: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);

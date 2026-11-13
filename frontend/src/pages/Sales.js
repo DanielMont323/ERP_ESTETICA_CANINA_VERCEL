@@ -15,7 +15,9 @@ import {
   MinusCircle,
   Edit,
   X,
-  XCircle
+  XCircle,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCalendarDate, hoyTepicISO } from '../helpers/dateUtils';
@@ -1245,10 +1247,47 @@ const Sales = () => {
     }).format(amount);
   };
 
-  const filteredSales = sales.filter(sale =>
-    sale.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    sale.notes?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Venta con el detalle de artículos desplegado en la tabla
+  const [ventaAbierta, setVentaAbierta] = useState(null);
+
+  // Mascotas de la venta (de la venta y de cada servicio), sin repetir
+  const nombresMascotas = (sale) => {
+    const nombres = [sale.mascota?.name, ...(sale.items || []).map(i => i.mascota?.name)].filter(Boolean);
+    return [...new Set(nombres)].join(', ');
+  };
+
+  // Hora de la venta (guardada en hora de Tepic en los componentes UTC).
+  // Las ventas con fecha elegida a mano no tienen hora real: no se muestra.
+  const horaVenta = (fecha) => {
+    const d = new Date(fecha);
+    const h = d.getUTCHours(), m = d.getUTCMinutes();
+    if ((h === 0 || h === 12) && m === 0 && d.getUTCSeconds() === 0) return '';
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
+  const NOMBRES_PAGO = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', transferencia: 'Transferencia' };
+  const textoPago = (sale) => {
+    const metodos = (sale.payments && sale.payments.length)
+      ? [...new Set(sale.payments.map(p => p.method))]
+      : [sale.paymentMethod].filter(Boolean);
+    if (metodos.length === 0) return '—';
+    if (metodos.length > 1) return 'Mixto';
+    return NOMBRES_PAGO[metodos[0]] || etiqueta(metodos[0]);
+  };
+
+  // Búsqueda por cliente, mascota, producto o nota. Antes, con el buscador vacío, las ventas sin
+  // cliente (de mostrador) no aparecían en la lista.
+  const textoBusqueda = searchTerm.trim().toLowerCase();
+  const filteredSales = sales.filter(sale => {
+    if (!textoBusqueda) return true;
+    const campos = [
+      sale.customer?.name,
+      sale.notes,
+      nombresMascotas(sale),
+      ...(sale.items || []).map(i => i.item?.name)
+    ];
+    return campos.some(c => c && c.toLowerCase().includes(textoBusqueda));
+  });
 
   if (loading) {
     return <SkeletonTable rows={5} columns={8} />;
@@ -1358,105 +1397,130 @@ const Sales = () => {
       <div className="card hover:shadow-md transition-shadow duration-200 flex flex-col max-h-[calc(100vh-320px)]">
         {/* Desktop Table - Hidden on Mobile */}
         <div className="hidden md:block table-container flex-1 overflow-auto">
-          <table className="table min-w-full">
+          <table className="table table-fixed w-full">
             <thead className="sticky top-0 bg-gray-50 dark:bg-dark-surface z-10">
               <tr>
-                <th className="px-4 text-left min-w-[100px]">Fecha</th>
-                <th className="px-4 text-left min-w-[150px]">Cliente</th>
-                <th className="px-4 text-left min-w-[120px]">Vendedor</th>
-                <th className="px-4 text-left min-w-[200px]">Items</th>
-                <th className="px-4 text-right min-w-[100px]">Subtotal</th>
-                <th className="px-4 text-right min-w-[100px]">Descuento</th>
-                <th className="px-4 text-right min-w-[120px]">Comisión Tarjeta</th>
-                <th className="px-4 text-right min-w-[100px]">Total</th>
-                <th className="px-4 text-right min-w-[100px]">Ingreso Neto</th>
-                <th className="px-4 text-left min-w-[80px]">Método</th>
-                <th className="px-4 text-center min-w-[80px]">Desc. empleado</th>
-                <th className="px-4 text-left min-w-[80px]">Estado</th>
-                <th className="px-4 text-center min-w-[80px]">Acciones</th>
+                <th className="w-[13%]">Fecha</th>
+                <th className="w-[22%]">Cliente · mascota</th>
+                <th className="w-[23%]">Artículos</th>
+                <th className="w-[12%]">Pago</th>
+                <th className="w-[13%] text-right">Total</th>
+                <th className="w-[9%]">Estado</th>
+                <th className="w-[8%] text-right"><span className="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
-              {filteredSales.map((sale, index) => (
-                <tr key={sale._id} className="table-row-divider">
-                  <td className="py-4 px-4">
-                    {(() => {
-                      // La fecha guardada ya está en hora de Tepic: se lee con componentes UTC.
-                      return formatCalendarDate(sale.date);
-                    })()}
-                  </td>
-                  <td className="py-4 px-4">
-                    {sale.customer ? sale.customer.name : 'Cliente general'}
-                  </td>
-                  <td className="py-4 px-4">
-                    {sale.user ? sale.user.name : 'Sin vendedor registrado'}
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="space-y-1">
-                      {sale.items.map((item, index) => (
-                        <div key={index} className="text-sm">
-                          {item.quantity}x {item.item.name}
+              {filteredSales.map((sale) => {
+                const abierta = ventaAbierta === sale._id;
+                const mascotas = nombresMascotas(sale);
+                const articulos = sale.items || [];
+                const piezas = articulos.reduce((s, i) => s + (i.quantity || 0), 0);
+                const comisiones = (sale.total || 0) - (sale.netIncome ?? sale.total ?? 0);
+                return (
+                  <React.Fragment key={sale._id}>
+                    <tr
+                      className={`table-row-divider cursor-pointer ${abierta ? 'bg-gray-50 dark:bg-dark-hover' : ''} ${sale.status === 'cancelada' ? 'opacity-60' : ''}`}
+                      onClick={() => setVentaAbierta(abierta ? null : sale._id)}
+                    >
+                      <td>
+                        <p className="text-gray-900 dark:text-dark-text">{formatCalendarDate(sale.date)}</p>
+                        <p className="text-xs text-gray-500 dark:text-dark-textSecondary">{horaVenta(sale.date)}</p>
+                      </td>
+                      <td>
+                        <p className="font-medium text-gray-900 dark:text-dark-text truncate" title={sale.customer?.name || 'Venta de mostrador'}>
+                          {sale.customer ? sale.customer.name : 'Venta de mostrador'}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-dark-textSecondary truncate" title={mascotas || ''}>
+                          {mascotas || 'Sin mascota'}
+                        </p>
+                      </td>
+                      <td>
+                        <p className="flex items-center gap-1 text-gray-900 dark:text-dark-text">
+                          {abierta ? <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-400" /> : <ChevronRight className="h-4 w-4 flex-shrink-0 text-gray-400" />}
+                          {piezas} {piezas === 1 ? 'artículo' : 'artículos'}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-dark-textSecondary truncate pl-5" title={articulos.map(i => i.item?.name).filter(Boolean).join(', ')}>
+                          {articulos[0]?.item?.name || '—'}{articulos.length > 1 ? ` +${articulos.length - 1}` : ''}
+                        </p>
+                      </td>
+                      <td>
+                        <p className="text-gray-900 dark:text-dark-text">{textoPago(sale)}</p>
+                        {sale.employeeDiscountApplied && (
+                          <p className="text-xs text-success-600">Desc. empleado</p>
+                        )}
+                      </td>
+                      <td className="text-right">
+                        <p className="font-semibold text-gray-900 dark:text-dark-text">{formatCurrency(sale.total)}</p>
+                        {sale.totalDiscount > 0 && (
+                          <p className="text-xs text-success-600">−{formatCurrency(sale.totalDiscount)} desc.</p>
+                        )}
+                        {comisiones > 0.009 && (
+                          <p className="text-xs text-gray-500 dark:text-dark-textSecondary">neto {formatCurrency(sale.netIncome)}</p>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`badge badge-${
+                          sale.status === 'completada' ? 'success' :
+                          sale.status === 'cancelada' ? 'danger' : 'warning'
+                        }`}>
+                          {sale.status === 'completada' ? 'Pagada' : etiqueta(sale.status)}
+                        </span>
+                      </td>
+                      <td className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="table-actions">
+                          {userRole === 'admin' && sale.status !== 'cancelada' && (
+                            <>
+                              <button
+                                onClick={() => handleEditSale(sale)}
+                                className="p-1.5 rounded-md text-gray-500 hover:text-brand-burgundy hover:bg-gray-100 dark:hover:bg-dark-hover"
+                                title="Editar venta"
+                                aria-label="Editar venta"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleCancelSale(sale)}
+                                className="p-1.5 rounded-md text-gray-500 hover:text-danger-600 hover:bg-danger-50"
+                                title="Cancelar venta"
+                                aria-label="Cancelar venta"
+                              >
+                                <XCircle className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="py-4 px-4 text-right font-medium">
-                    {formatCurrency(sale.subtotal || sale.total)}
-                  </td>
-                  <td className="py-4 px-4 text-right text-green-600 dark:text-green-400">
-                    {sale.totalDiscount > 0 ? formatCurrency(sale.totalDiscount) : '-'}
-                  </td>
-                  <td className="py-4 px-4 text-right">
-                    {sale.cardCommission > 0 ? formatCurrency(sale.cardCommission) : '-'}
-                  </td>
-                  <td className="py-4 px-4 text-right font-medium">
-                    {formatCurrency(sale.total)}
-                  </td>
-                  <td className="py-4 px-4 text-right font-medium text-success-600">
-                    {formatCurrency(sale.netIncome)}
-                  </td>
-                  <td className="py-4 px-4">
-                    <span className="capitalize">{sale.paymentMethod}</span>
-                  </td>
-                  <td className="py-4 px-4 text-center">
-                    {sale.employeeDiscountApplied ? (
-                      <span className="text-green-600 dark:text-green-400 font-bold">✓</span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
+                      </td>
+                    </tr>
+                    {abierta && (
+                      <tr className="bg-gray-50 dark:bg-dark-hover">
+                        <td colSpan={7} className="pt-0">
+                          <div className="ml-[13%] pl-3 pb-1 max-w-2xl">
+                            <table className="w-full text-sm">
+                              <tbody>
+                                {articulos.map((item, i) => (
+                                  <tr key={i}>
+                                    <td className="py-1 pl-0 pr-3 border-0 text-gray-700 dark:text-dark-text">
+                                      {item.item?.name || 'Artículo sin nombre'}
+                                      {item.mascota?.name && <span className="text-xs text-gray-500"> · {item.mascota.name}</span>}
+                                    </td>
+                                    <td className="py-1 pr-3 border-0 text-right text-gray-500 whitespace-nowrap">{item.quantity} × {formatCurrency(item.unitPrice)}</td>
+                                    <td className="py-1 pr-0 border-0 text-right font-medium whitespace-nowrap">{formatCurrency(item.subtotalAfterDiscount ?? item.subtotal ?? item.quantity * item.unitPrice)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <p className="mt-2 text-xs text-gray-500 dark:text-dark-textSecondary">
+                              Atendió: {sale.user ? sale.user.name : 'Sin vendedor registrado'}
+                              {sale.cardCommission > 0 && <> · Comisión de tarjeta {formatCurrency(sale.cardCommission)}</>}
+                              {sale.notes && <> · Nota: {sale.notes}</>}
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td className="py-4 px-4">
-                    <span className={`badge badge-${
-                      sale.status === 'completada' ? 'success' :
-                      sale.status === 'cancelada' ? 'danger' : 'warning'
-                    }`}>
-                      {etiqueta(sale.status)}
-                    </span>
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="flex gap-2 justify-center">
-                      {userRole === 'admin' && sale.status !== 'cancelada' && (
-                        <>
-                          <button
-                            onClick={() => handleEditSale(sale)}
-                            className="text-brand-burgundy hover:text-primary-900"
-                            title="Editar venta"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleCancelSale(sale)}
-                            className="text-danger-600 hover:text-danger-900"
-                            title="Cancelar venta"
-                          >
-                            <XCircle className="h-4 w-4" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
           
