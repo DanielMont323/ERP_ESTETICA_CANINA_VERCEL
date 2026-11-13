@@ -436,18 +436,18 @@ const Products = () => {
     <table className="table table-fixed w-full">
       <thead className="sticky top-0 bg-gray-50 dark:bg-dark-surface z-10">
         <tr>
-          <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[17%]">Producto</th>
-          <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[9%]">Categoría</th>
-          <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[9%]">Proveedor</th>
-          <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[7%]">Stock</th>
-          <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[7%]">Costo</th>
-          <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[7%]">Precio</th>
-          <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[8%]">Descuento</th>
-          <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[9%]">Precio Final</th>
-          <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[6%]">Margen</th>
-          <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[8%]">Caducidad</th>
-          <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[6%]">Estado</th>
-          <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[7%]">Acciones</th>
+          <th className="w-[17%]">Producto</th>
+          <th className="w-[9%]">Categoría</th>
+          <th className="w-[9%]">Proveedor</th>
+          <th className="w-[7%]">Stock</th>
+          <th className="w-[7%]">Costo</th>
+          <th className="w-[7%]">Precio</th>
+          <th className="w-[6%]">Descuento</th>
+          <th className="w-[9%]">Precio Final</th>
+          <th className="w-[6%]">Margen</th>
+          <th className="w-[8%]">Caducidad</th>
+          <th className="w-[8%]">Estado</th>
+          <th className="w-[7%]">Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -455,35 +455,35 @@ const Products = () => {
                 const stockStatus = getStockStatus(product);
                 const expirationStatus = getExpirationStatus(product);
                 return (
-                  <tr key={product._id} className={`table-row-divider ${index % 2 === 0 ? 'bg-white dark:bg-dark-card' : 'bg-gray-50 dark:bg-dark-surface'} hover:bg-yellow-100`}>
-                    <td className="py-5">
+                  <tr key={product._id} className="table-row-divider">
+                    <td className="">
                       <div>
                         <p className="font-medium text-gray-900 dark:text-dark-text">{product.name}</p>
                         <p className="text-sm text-gray-500 dark:text-dark-textSecondary">SKU: {product.sku}</p>
                       </div>
                     </td>
-                    <td className="py-5">
+                    <td className="">
                       <span>{product.category?.name || 'Sin categoría'}</span>
                     </td>
-                    <td className="py-5">
+                    <td className="">
                       <span>{product.supplier?.name || 'Sin proveedor'}</span>
                     </td>
-                    <td className="py-5">
+                    <td className="">
                       <div className="text-right">
                         <p className="font-medium">{product.stock}</p>
                         <p className="text-sm text-gray-500 dark:text-dark-textSecondary">Mín: {product.minStock}</p>
                       </div>
                     </td>
-                    <td className="py-5 text-right">{formatCurrency(product.cost)}</td>
-                    <td className="py-5 text-right">{formatCurrency(product.price)}</td>
-                    <td className="py-5 text-right">
+                    <td className="text-right">{formatCurrency(product.cost)}</td>
+                    <td className="text-right">{formatCurrency(product.price)}</td>
+                    <td className="text-right">
                       {product.discountPercentage > 0 ? (
                         <span className="text-success-600 font-medium">{product.discountPercentage}%</span>
                       ) : (
                         <span className="text-gray-400 dark:text-dark-textSecondary">-</span>
                       )}
                     </td>
-                    <td className="py-5 text-right font-semibold">
+                    <td className="text-right font-semibold">
                       {product.discountPercentage > 0 ? (
                         <div>
                           <span className="text-gray-400 dark:text-dark-textSecondary line-through text-sm">{formatCurrency(product.price)}</span>
@@ -493,7 +493,7 @@ const Products = () => {
                         formatCurrency(product.price)
                       )}
                     </td>
-                    <td className="py-5 text-right">
+                    <td className="text-right">
                       <span className={`font-medium ${
                         product.margin && parseFloat(product.margin) > 30 ? 'text-success-600' : 
                         product.margin && parseFloat(product.margin) > 15 ? 'text-warning-600' : 
@@ -502,12 +502,12 @@ const Products = () => {
                         {product.margin !== null && product.margin !== undefined ? `${product.margin}%` : '—'}
                       </span>
                     </td>
-                    <td className="py-5">
+                    <td className="">
                       <span className={`badge badge-${expirationStatus.color}`}>
                         {expirationStatus.text}
                       </span>
                     </td>
-                    <td className="py-5">
+                    <td className="">
                       <span className={`badge badge-${stockStatus.color}`}>
                         {stockStatus.text}
                       </span>

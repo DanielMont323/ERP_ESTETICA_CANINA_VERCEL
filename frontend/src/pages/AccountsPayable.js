@@ -382,7 +382,7 @@ const AccountsPayable = () => {
                 const discountStatus = getDiscountStatus(account.discountInfo);
                 const dueDateText = getDueDateText(account.dueDate, account.status);
                 return (
-                  <tr key={account._id} className={`table-row-divider ${index % 2 === 0 ? 'bg-white dark:bg-dark-card' : 'bg-gray-50 dark:bg-dark-surface'} hover:bg-yellow-100`}>
+                  <tr key={account._id} className="table-row-divider">
                     <td className="py-4">
                       <input
                         type="checkbox"

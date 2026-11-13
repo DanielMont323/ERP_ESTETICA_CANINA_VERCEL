@@ -100,20 +100,29 @@
     @apply text-sm text-danger-600 mt-1;
   }
   
+  /* Estilo único de tablas para todos los módulos.
+     Antes: separador de 2 px casi negro + fondo alternado gris/blanco + resaltado amarillo,
+     que hacía ver cada fila "enmarcada". Ahora: separadores finos y claros, sin fondo alternado,
+     resaltado suave al pasar el mouse y números alineados (mismo ancho de dígito). */
   .table {
-    @apply w-full border-collapse;
+    @apply w-full border-collapse bg-white dark:bg-dark-card;
   }
-  
+
   .table th {
-    @apply px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-dark-textSecondary uppercase tracking-wider border-b border-gray-200 dark:border-dark-border bg-gray-50 dark:bg-dark-surface;
+    @apply px-3 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-dark-textSecondary uppercase tracking-wide border-b border-gray-200 dark:border-dark-border bg-gray-50 dark:bg-dark-surface whitespace-nowrap align-middle;
   }
-  
+
   .table td {
-    @apply px-4 py-3 text-sm text-gray-900 dark:text-dark-text border-b border-gray-100 dark:border-dark-border transition-colors duration-150;
+    @apply px-3 py-3 text-sm text-gray-800 dark:text-dark-text border-b border-gray-100 dark:border-dark-border align-middle transition-colors duration-150;
+    font-variant-numeric: tabular-nums;
   }
-  
+
   .table tbody tr {
     @apply hover:bg-gray-50 dark:hover:bg-dark-hover transition-colors duration-150;
+  }
+
+  .table tbody tr:last-child td {
+    @apply border-b-0;
   }
 
   .table-container {
@@ -124,26 +133,14 @@
     @apply min-w-full;
   }
 
-  .table th {
-    @apply px-3 py-2 sm:px-4 sm:py-3 text-left text-xs font-semibold text-gray-500 dark:text-dark-textSecondary uppercase tracking-wider border-b border-gray-200 dark:border-dark-border bg-gray-50 dark:bg-dark-surface whitespace-nowrap;
-  }
-  
-  .table td {
-    @apply px-3 py-2 sm:px-4 sm:py-3 text-sm text-gray-900 dark:text-dark-text border-b border-gray-100 dark:border-dark-border transition-colors duration-150;
-  }
-
+  /* Se conserva la clase por compatibilidad; ya no dibuja la línea gruesa negra */
   .table-row-divider {
     position: relative;
   }
 
-  .table-row-divider::after {
-    content: '';
-    position: absolute;
-    left: -9999px;
-    right: -9999px;
-    bottom: 0;
-    height: 2px;
-    background-color: #1f2937;
+  /* Celda de acciones: íconos alineados a la derecha sin romper la celda de la tabla */
+  .table-actions {
+    @apply inline-flex items-center justify-end gap-2 whitespace-nowrap;
   }
 
   .badge {

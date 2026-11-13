@@ -1361,24 +1361,24 @@ const Sales = () => {
           <table className="table min-w-full">
             <thead className="sticky top-0 bg-gray-50 dark:bg-dark-surface z-10">
               <tr>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-left min-w-[100px]">Fecha</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-left min-w-[150px]">Cliente</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-left min-w-[120px]">Vendedor</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-left min-w-[200px]">Items</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-right min-w-[100px]">Subtotal</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-right min-w-[100px]">Descuento</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-right min-w-[120px]">Comisión Tarjeta</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-right min-w-[100px]">Total</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-right min-w-[100px]">Ingreso Neto</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-left min-w-[80px]">Método</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-center min-w-[80px]">Desc. empleado</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-left min-w-[80px]">Estado</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 px-4 text-center min-w-[80px]">Acciones</th>
+                <th className="px-4 text-left min-w-[100px]">Fecha</th>
+                <th className="px-4 text-left min-w-[150px]">Cliente</th>
+                <th className="px-4 text-left min-w-[120px]">Vendedor</th>
+                <th className="px-4 text-left min-w-[200px]">Items</th>
+                <th className="px-4 text-right min-w-[100px]">Subtotal</th>
+                <th className="px-4 text-right min-w-[100px]">Descuento</th>
+                <th className="px-4 text-right min-w-[120px]">Comisión Tarjeta</th>
+                <th className="px-4 text-right min-w-[100px]">Total</th>
+                <th className="px-4 text-right min-w-[100px]">Ingreso Neto</th>
+                <th className="px-4 text-left min-w-[80px]">Método</th>
+                <th className="px-4 text-center min-w-[80px]">Desc. empleado</th>
+                <th className="px-4 text-left min-w-[80px]">Estado</th>
+                <th className="px-4 text-center min-w-[80px]">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {filteredSales.map((sale, index) => (
-                <tr key={sale._id} className={`table-row-divider ${index % 2 === 0 ? 'bg-white dark:bg-dark-card' : 'bg-gray-50 dark:bg-dark-surface'} hover:bg-yellow-100`}>
+                <tr key={sale._id} className="table-row-divider">
                   <td className="py-4 px-4">
                     {(() => {
                       // La fecha guardada ya está en hora de Tepic: se lee con componentes UTC.

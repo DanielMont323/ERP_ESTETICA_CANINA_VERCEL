@@ -757,30 +757,30 @@ const Purchases = () => {
           <table className="table table-fixed w-full">
             <thead className="sticky top-0 bg-gray-50 dark:bg-dark-surface z-10">
               <tr>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[8%]">Fecha</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[16%]">Proveedor</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[9%]">Folio</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[20%]">Productos</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[7%]">Subtotal</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[6%]">IVA</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[6%]">Descuento</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[10%]">Total</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[6%]">Tipo</th>
-                <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[6%]">Estado</th>
-                {user?.role === 'admin' && <th className="text-sm font-semibold text-gray-700 dark:text-dark-textSecondary py-3 w-[6%]">Acciones</th>}
+                <th className="w-[8%]">Fecha</th>
+                <th className="w-[16%]">Proveedor</th>
+                <th className="w-[9%]">Folio</th>
+                <th className="w-[20%]">Productos</th>
+                <th className="w-[7%]">Subtotal</th>
+                <th className="w-[6%]">IVA</th>
+                <th className="w-[6%]">Descuento</th>
+                <th className="w-[10%]">Total</th>
+                <th className="w-[6%]">Tipo</th>
+                <th className="w-[6%]">Estado</th>
+                {user?.role === 'admin' && <th className="w-[6%]">Acciones</th>}
               </tr>
             </thead>
             <tbody>
               {filteredPurchases.map((purchase, index) => (
-                <tr key={purchase._id} className={`table-row-divider ${index % 2 === 0 ? 'bg-white dark:bg-dark-card' : 'bg-gray-50 dark:bg-dark-surface'} hover:bg-yellow-100`}>
-                  <td className="py-5">{formatCalendarDate(purchase.date)}</td>
-                  <td className="py-5">
+                <tr key={purchase._id} className="table-row-divider">
+                  <td className="">{formatCalendarDate(purchase.date)}</td>
+                  <td className="">
                     <span className="truncate block" title={purchase.proveedor?.name}>{purchase.proveedor?.name}</span>
                   </td>
-                  <td className="py-5">
+                  <td className="">
                     <span className="truncate block" title={purchase.invoice || '-'}>{purchase.invoice || '-'}</span>
                   </td>
-                  <td className="py-5">
+                  <td className="">
                     {purchase.recuperada?.origen && <CompraRecuperadaAviso purchase={purchase} />}
                     {purchase.items?.map((item, idx) => (
                       <div key={idx} className="text-sm">
@@ -788,24 +788,24 @@ const Purchases = () => {
                       </div>
                     ))}
                   </td>
-                  <td className="py-5">{formatCurrency(purchase.baseTotal || purchase.total)}</td>
-                  <td className={`py-5 ${purchase.totalIVA > 0 ? 'text-blue-600' : 'text-gray-400 dark:text-dark-textSecondary'}`}>
+                  <td className="">{formatCurrency(purchase.baseTotal || purchase.total)}</td>
+                  <td className={`${purchase.totalIVA > 0 ? 'text-blue-600' : 'text-gray-400 dark:text-dark-textSecondary'}`}>
                     {formatCurrency(purchase.totalIVA || 0)}
                   </td>
-                  <td className="py-5 text-green-600">
+                  <td className="text-green-600">
                     {purchase.totalDiscount > 0 ? formatCurrency(purchase.totalDiscount) : '-'}
                   </td>
-                  <td className="py-5 font-bold text-gray-900 dark:text-dark-text">
+                  <td className="font-bold text-gray-900 dark:text-dark-text">
                     {formatCurrency(purchase.total)}
                   </td>
-                  <td className="py-5">
+                  <td className="">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       purchase.type === 'contado' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
                     }`}>
                       {etiqueta(purchase.type)}
                     </span>
                   </td>
-                  <td className="py-5">
+                  <td className="">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       purchase.status === 'pagada' ? 'bg-green-100 text-green-800' : 
                       purchase.status === 'pendiente' ? 'bg-yellow-100 text-yellow-800' : 
@@ -815,7 +815,8 @@ const Purchases = () => {
                     </span>
                   </td>
                   {user?.role === 'admin' && (
-                    <td className="py-5 flex space-x-2">
+                    <td>
+                      <div className="table-actions">
                       {!purchase.recuperada?.origen && (
                         <button
                           onClick={() => handleEditClick(purchase)}
@@ -835,6 +836,7 @@ const Purchases = () => {
                           <X className="h-4 w-4" />
                         </button>
                       )}
+                      </div>
                     </td>
                   )}
                 </tr>
