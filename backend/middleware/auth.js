@@ -25,6 +25,14 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
+    // Sesión iniciada antes del último cambio de contraseña: ya no es válida
+    if (user.passwordChangedAt && decoded.iat * 1000 < user.passwordChangedAt.getTime() - 1000) {
+      return res.status(401).json({
+        success: false,
+        message: 'La contraseña cambió. Inicia sesión de nuevo.'
+      });
+    }
+
     req.user = user;
     next();
   } catch (error) {

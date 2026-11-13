@@ -33,7 +33,10 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (error.response?.status === 401) {
+    // Un 401 del propio inicio de sesión (contraseña incorrecta) no debe recargar la pantalla:
+    // así se ve el mensaje de error.
+    const esLogin = (error.config?.url || '').includes('/auth/login');
+    if (error.response?.status === 401 && !esLogin) {
       localStorage.removeItem('token');
       window.location.href = '/login';
     }
@@ -86,9 +89,10 @@ api.delete = sinDuplicados('delete');
 // Auth services
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
-  register: (userData) => api.post('/auth/register', userData),
+  createUser: (userData) => api.post('/auth/register', userData), // solo administradores
   getMe: () => api.get('/auth/me'),
   getUsers: () => api.get('/auth/users'),
+  resetUserPassword: (id, newPassword) => api.put(`/auth/users/${id}/password`, { newPassword }), // solo administradores
 };
 
 // Products services

@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { authAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import {
+  Users,
   User,
   Bell,
   Shield,
@@ -11,8 +13,102 @@ import {
   EyeOff
 } from 'lucide-react';
 
+// Administración de usuarios (solo admin): crear cuentas y asignar contraseña nueva.
+const UsuariosAdmin = () => {
+  const [usuarios, setUsuarios] = useState([]);
+  const [nuevo, setNuevo] = useState({ name: '', email: '', password: '', role: 'user' });
+  const [guardando, setGuardando] = useState(false);
+  const [restableciendo, setRestableciendo] = useState(null);
+  const [passwordNueva, setPasswordNueva] = useState('');
+
+  const cargar = async () => {
+    try { setUsuarios((await authAPI.getUsers()).data.data); } catch { toast.error('No se pudo cargar la lista de usuarios'); }
+  };
+  useEffect(() => { cargar(); }, []);
+
+  const crear = async e => {
+    e.preventDefault();
+    if (nuevo.password.length < 8) { toast.error('La contraseña debe tener al menos 8 caracteres'); return; }
+    setGuardando(true);
+    try {
+      await authAPI.createUser(nuevo);
+      toast.success(`Usuario ${nuevo.name} creado`);
+      setNuevo({ name: '', email: '', password: '', role: 'user' });
+      cargar();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'No se pudo crear el usuario');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const restablecer = async id => {
+    if (passwordNueva.length < 8) { toast.error('La contraseña debe tener al menos 8 caracteres'); return; }
+    try {
+      const r = await authAPI.resetUserPassword(id, passwordNueva);
+      toast.success(r.data.message);
+      setRestableciendo(null);
+      setPasswordNueva('');
+      cargar();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'No se pudo cambiar la contraseña');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <h3 className="text-lg font-medium text-gray-700 dark:text-dark-text">Usuarios del sistema</h3>
+      <div className="divide-y divide-gray-200 dark:divide-dark-border border border-gray-200 dark:border-dark-border rounded-xl">
+        {usuarios.map(u => (
+          <div key={u._id} className="p-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="font-medium text-gray-800 dark:text-dark-text">{u.name}</p>
+                <p className="text-xs text-gray-500 dark:text-dark-textSecondary">
+                  {u.email} · {u.role === 'admin' ? 'Administrador' : 'Usuario'}
+                  {u.lockUntil && new Date(u.lockUntil) > new Date() && ' · Bloqueado temporalmente'}
+                </p>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm"
+                onClick={() => { setRestableciendo(restableciendo === u._id ? null : u._id); setPasswordNueva(''); }}>
+                Asignar contraseña nueva
+              </button>
+            </div>
+            {restableciendo === u._id && (
+              <div className="flex flex-wrap gap-2">
+                <input type="text" className="form-input flex-1 min-w-[12rem]" placeholder="Contraseña nueva (mínimo 8)"
+                  value={passwordNueva} onChange={e => setPasswordNueva(e.target.value)} autoComplete="new-password" />
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => restablecer(u._id)}>Guardar</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <form onSubmit={crear} className="space-y-3 border border-gray-200 dark:border-dark-border rounded-xl p-4">
+        <h4 className="font-medium text-gray-700 dark:text-dark-text">Crear usuario</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input className="form-input" placeholder="Nombre" required value={nuevo.name}
+            onChange={e => setNuevo({ ...nuevo, name: e.target.value })} />
+          <input className="form-input" type="email" placeholder="correo@ejemplo.com" required value={nuevo.email}
+            onChange={e => setNuevo({ ...nuevo, email: e.target.value })} />
+          <input className="form-input" type="text" placeholder="Contraseña (mínimo 8)" required value={nuevo.password}
+            onChange={e => setNuevo({ ...nuevo, password: e.target.value })} autoComplete="new-password" />
+          <select className="form-input" value={nuevo.role} onChange={e => setNuevo({ ...nuevo, role: e.target.value })}>
+            <option value="user">Usuario (ventas, clientes, mascotas)</option>
+            <option value="admin">Administrador (todo)</option>
+          </select>
+        </div>
+        <button type="submit" className="btn btn-primary btn-md" disabled={guardando}>
+          {guardando ? 'Creando...' : 'Crear usuario'}
+        </button>
+      </form>
+    </div>
+  );
+};
+
 const Settings = () => {
-  const { user } = useAuth();
+  const { user, changePassword } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -21,29 +117,33 @@ const Settings = () => {
     confirmPassword: ''
   });
 
+  const [cambiando, setCambiando] = useState(false);
+
+  // Antes este botón decía "Contraseña actualizada" sin cambiar nada; ahora llama al servidor.
   const handlePasswordChange = async (e) => {
     e.preventDefault();
-    
     if (formData.newPassword !== formData.confirmPassword) {
       toast.error('Las contraseñas no coinciden');
       return;
     }
-
-    try {
-      // API call to change password would go here
-      toast.success('Contraseña actualizada correctamente');
-      setFormData({
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: ''
-      });
-    } catch (error) {
-      toast.error('Error al actualizar contraseña');
+    if (formData.newPassword.length < 8) {
+      toast.error('La contraseña nueva debe tener al menos 8 caracteres');
+      return;
+    }
+    setCambiando(true);
+    const r = await changePassword(formData.currentPassword, formData.newPassword);
+    setCambiando(false);
+    if (r.success) {
+      toast.success('Contraseña actualizada. Las demás sesiones abiertas se cerraron.');
+      setFormData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } else {
+      toast.error(r.message);
     }
   };
 
   const tabs = [
     { id: 'profile', name: 'Perfil', icon: User },
+    ...(user?.role === 'admin' ? [{ id: 'users', name: 'Usuarios', icon: Users }] : []),
     { id: 'notifications', name: 'Notificaciones', icon: Bell },
     { id: 'security', name: 'Seguridad', icon: Shield },
     { id: 'data', name: 'Datos', icon: Database },
@@ -172,6 +272,8 @@ const Settings = () => {
                 </div>
               )}
 
+              {activeTab === 'users' && user?.role === 'admin' && <UsuariosAdmin />}
+
               {/* Security Tab */}
               {activeTab === 'security' && (
                 <div className="space-y-6">
@@ -224,8 +326,8 @@ const Settings = () => {
                       />
                     </div>
 
-                    <button type="submit" className="btn btn-primary btn-md hover:scale-105 transition-transform">
-                      Actualizar Contraseña
+                    <button type="submit" disabled={cambiando} className="btn btn-primary btn-md hover:scale-105 transition-transform">
+                      {cambiando ? 'Actualizando...' : 'Actualizar Contraseña'}
                     </button>
                   </form>
                 </div>

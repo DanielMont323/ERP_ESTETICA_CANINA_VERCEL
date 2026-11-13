@@ -32,13 +32,19 @@ const usuarioSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
-  }
+  },
+  // Seguridad de inicio de sesión: bloqueo temporal tras varios intentos fallidos
+  failedLoginAttempts: { type: Number, default: 0 },
+  lockUntil: { type: Date },
+  // Al cambiar la contraseña, las sesiones abiertas antes de ese momento dejan de servir
+  passwordChangedAt: { type: Date }
 });
 
 // Encriptar contraseña antes de guardar
 usuarioSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
   this.password = await bcrypt.hash(this.password, 12);
+  if (!this.isNew) this.passwordChangedAt = new Date();
   next();
 });
 

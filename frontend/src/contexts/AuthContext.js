@@ -63,19 +63,16 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (name, email, password) => {
+  // Cambiar la contraseña propia: el servidor invalida las sesiones anteriores y devuelve una nueva
+  const changePassword = async (currentPassword, newPassword) => {
     try {
-      const response = await api.post('/auth/register', { name, email, password });
-      const { token, user } = response.data;
-      
+      const response = await api.put('/auth/password', { currentPassword, newPassword });
+      const { token } = response.data;
       localStorage.setItem('token', token);
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      setUser(user);
-      
       return { success: true };
     } catch (error) {
-      const message = error.response?.data?.message || 'Error al registrar usuario';
-      return { success: false, message };
+      return { success: false, message: error.response?.data?.message || 'Error al cambiar la contraseña' };
     }
   };
 
@@ -89,7 +86,7 @@ export const AuthProvider = ({ children }) => {
     user,
     loading,
     login,
-    register,
+    changePassword,
     logout
   };
 

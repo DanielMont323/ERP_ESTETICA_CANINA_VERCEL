@@ -33,28 +33,33 @@ connectDB();
 const app = express();
 
 // Middleware
-// CORS configuration for Vercel, Zeabur and local development
+// CORS: solo la app del ERP puede llamar a la API desde un navegador (antes se aceptaba cualquier sitio).
+// - Frontend en Vercel: erp-estetica-canina-vercel*.vercel.app (producción y vistas previas)
+// - Desarrollo local: localhost / 127.0.0.1
+// - Otros dominios (p. ej. uno propio): variable CORS_ORIGINS separada por comas
+// Las peticiones sin Origin (scripts, curl) no pasan por CORS; las protege el token.
+const ORIGENES_EXTRA = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+const origenPermitido = origin =>
+  /^https:\/\/erp-estetica-canina-vercel[a-z0-9-]*\.vercel\.app$/.test(origin) ||
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+  ORIGENES_EXTRA.includes(origin);
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
-    // Allow localhost for local development
-    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-      return callback(null, true);
-    }
-    
-    // In production, allow all origins (Vercel/Zeabur environment)
-    if (process.env.NODE_ENV === 'production') {
-      return callback(null, true);
-    }
-    
-    callback(null, true);
+    callback(null, origenPermitido(origin));
   },
   credentials: true
 };
 app.use(cors(corsOptions));
-app.use(express.json());
+
+// Encabezados básicos de seguridad (sin dependencias nuevas)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+app.use(express.json({ limit: '1mb' }));
 
 // Routes
 // S2: toda la API exige token, excepto /api/auth y /api/health.
