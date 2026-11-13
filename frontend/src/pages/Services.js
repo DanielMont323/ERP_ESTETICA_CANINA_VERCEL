@@ -165,7 +165,9 @@ const Services = () => {
       duration: service.duration,
       category: service.category?._id || service.category,
       discountPercentage: (service.discountPercentage || 0).toString(),
-      insumos: service.insumos || []
+      insumos: service.insumos || [],
+      costoExterno: service.costoExterno ? String(service.costoExterno) : '',
+      proveedorExterno: service.proveedorExterno || ''
     });
     setShowModal(true);
   };
@@ -187,12 +189,19 @@ const Services = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // Duración opcional y costo externo numérico (0 si no lo cobra un tercero)
+    const datos = {
+      ...formData,
+      duration: formData.duration === '' || formData.duration === null ? null : Number(formData.duration),
+      costoExterno: Number(formData.costoExterno) || 0,
+      proveedorExterno: (formData.proveedorExterno || '').trim()
+    };
     try {
       if (editingService) {
-        await servicesAPI.update(editingService._id, formData);
+        await servicesAPI.update(editingService._id, datos);
         toast.success('Servicio actualizado correctamente');
       } else {
-        await servicesAPI.create(formData);
+        await servicesAPI.create(datos);
         toast.success('Servicio creado correctamente');
       }
       setShowModal(false);
@@ -283,10 +292,21 @@ const Services = () => {
                     <p className="mt-1 text-sm text-gray-600 dark:text-dark-textSecondary">{service.description}</p>
                   )}
                   <div className="mt-3 space-y-1">
-                    <div className="flex items-center text-sm text-gray-600 dark:text-dark-textSecondary">
-                      <Clock className="h-4 w-4 mr-2" />
-                      {service.duration} minutos
-                    </div>
+                    {service.duration > 0 && (
+                      <div className="flex items-center text-sm text-gray-600 dark:text-dark-textSecondary">
+                        <Clock className="h-4 w-4 mr-2" />
+                        {service.duration} minutos
+                      </div>
+                    )}
+                    {service.costoExterno > 0 && (
+                      <div className="text-xs text-gray-500 dark:text-dark-textSecondary">
+                        Costo {service.proveedorExterno ? service.proveedorExterno : 'externo'}: {formatCurrency(service.costoExterno)}
+                        {' · '}
+                        <span className={service.price - service.costoExterno >= 0 ? 'text-success-600' : 'text-danger-600'}>
+                          ganancia {formatCurrency(service.price * (1 - (service.discountPercentage || 0) / 100) - service.costoExterno)}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center text-sm text-gray-600 dark:text-dark-textSecondary">
                       <DollarSign className="h-4 w-4 mr-2" />
                       {service.discountPercentage > 0 ? (
@@ -380,12 +400,49 @@ const Services = () => {
                     className="form-input"
                   />
                 </div>
+                <div className="rounded-lg border border-gray-200 dark:border-dark-border p-3 space-y-3">
+                  <div>
+                    <label className="form-label">Costo externo por servicio (opcional)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={formData.costoExterno ?? ''}
+                      onChange={(e) => setFormData({...formData, costoExterno: e.target.value})}
+                      className="form-input"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-dark-textSecondary mt-1">
+                      Lo que cobra un tercero por cada uno, por ejemplo el laboratorio por un estudio. Se resta como costo en el reporte de ganancia.
+                    </p>
+                  </div>
+                  {Number(formData.costoExterno) > 0 && (
+                    <div>
+                      <label className="form-label">Laboratorio o proveedor (opcional)</label>
+                      <input
+                        type="text"
+                        placeholder="Nombre del laboratorio"
+                        value={formData.proveedorExterno ?? ''}
+                        onChange={(e) => setFormData({...formData, proveedorExterno: e.target.value})}
+                        className="form-input"
+                      />
+                      {Number(formData.price) > 0 && (
+                        <p className="text-xs mt-1 text-gray-600 dark:text-dark-textSecondary">
+                          Ganancia por servicio: <span className={Number(formData.price) - Number(formData.costoExterno) >= 0 ? 'text-success-600 font-medium' : 'text-danger-600 font-medium'}>
+                            {formatCurrency(Number(formData.price) - Number(formData.costoExterno))}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <div>
-                  <label className="form-label">Duración (minutos)</label>
+                  <label className="form-label">Duración en minutos (opcional)</label>
                   <input
                     type="number"
-                    required
-                    value={formData.duration}
+                    min="0"
+                    placeholder="Ej. 60"
+                    value={formData.duration ?? ''}
                     onChange={(e) => setFormData({...formData, duration: e.target.value})}
                     className="form-input"
                   />

@@ -110,7 +110,7 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
 
   const t = {
     ventasProductos: 0, ventasServicios: 0, total: 0, comisionTarjeta: 0, otrasComisiones: 0, ingresoNeto: 0,
-    costoVerificado: 0, costoEstimado: 0, insumosServicios: 0,
+    costoVerificado: 0, costoEstimado: 0, insumosServicios: 0, serviciosExternos: 0,
     lineasVerificadas: 0, lineasEstimadas: 0, lineasSinCosto: 0,
     ventasFifo: 0, ventasHistoricas: 0
   };
@@ -137,6 +137,11 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
       if (it.type === 'servicio') t.ventasServicios += ingreso; else t.ventasProductos += ingreso;
     });
     if (sumaLineas === 0) t.ventasProductos += total;
+
+    // Servicios con costo externo (laboratorio, rayos X): costo copiado en la línea al vender
+    items.forEach(it => {
+      if (it.type === 'servicio' && it.costoExterno > 0) t.serviciosExternos += it.costoExterno * (it.quantity || 0);
+    });
 
     const fifo = costosFifo.get(String(v._id));
     if (fifo) {
@@ -176,7 +181,7 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
   const totalFaltantes = faltantes.reduce((s, f) => s + f.monto, 0);
 
   const costoProductos = t.costoVerificado + t.costoEstimado;
-  const costoVentas = costoProductos + t.insumosServicios;
+  const costoVentas = costoProductos + t.insumosServicios + t.serviciosExternos;
   const utilidadBruta = t.ingresoNeto - costoVentas;
   // Ajustes manuales de inventario del periodo: mermas/faltantes (salidas) menos sobrantes (entradas),
   // valuados al costo FIFO de las capas. Una merma es mercancía que se pagó y no se vendió.
@@ -221,6 +226,7 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
       productosEstimado: r2(t.costoEstimado),
       productos: r2(costoProductos),
       insumosServicios: r2(t.insumosServicios),
+      serviciosExternos: r2(t.serviciosExternos),
       total: r2(costoVentas)
     },
     utilidadBruta: r2(utilidadBruta),

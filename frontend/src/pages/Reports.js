@@ -477,12 +477,23 @@ const Reports = () => {
                     <div>
                       <div className="flex justify-between items-center gap-2">
                         <span className="text-brand-burgundy">Costo de la mercancía vendida:</span>
-                        <span className="font-semibold">{formatCurrency(r.costoVentas.total)}</span>
+                        <span className="font-semibold">{formatCurrency(r.costoVentas.total - (r.costoVentas.serviciosExternos || 0))}</span>
                       </div>
                       <p className="text-xs text-gray-500 dark:text-dark-textSecondary">
                         Lo que costó comprar los productos que se vendieron{r.costoVentas.productosEstimado > 0 ? ' (aproximado)' : ''}
                       </p>
                     </div>
+                    {r.costoVentas.serviciosExternos > 0 && (
+                      <div>
+                        <div className="flex justify-between items-center gap-2">
+                          <span className="text-brand-burgundy">Estudios y servicios externos:</span>
+                          <span className="font-semibold">{formatCurrency(r.costoVentas.serviciosExternos)}</span>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-dark-textSecondary">
+                          Lo que cobró el laboratorio u otros proveedores por los servicios vendidos
+                        </p>
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={handleExpensesClick}
@@ -599,7 +610,7 @@ const Reports = () => {
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={[
                   { name: 'Entró', valor: incomeStatement.ingresoNeto, color: '#3b82f6', onClick: handleSalesClick },
-                  { name: 'Mercancía', valor: incomeStatement.costoVentas.total, color: '#f59e0b' },
+                  { name: 'Costo vendido', valor: incomeStatement.costoVentas.total, color: '#f59e0b' },
                   { name: 'Gastos', valor: incomeStatement.gastos.total, color: '#ef4444', onClick: handleExpensesClick },
                   { name: 'Resultado', valor: incomeStatement.utilidadOperacion, color: incomeStatement.utilidadOperacion >= 0 ? '#10b981' : '#ef4444' }
                 ]}>

@@ -92,6 +92,29 @@ test('la comisión de Mercado Libre sí se resta', async () => {
   expect(d.ingresoNeto).toBe(410);
 });
 
+test('estudio de laboratorio externo: se crea sin duración, no usa stock y su costo se resta', async () => {
+  const { Servicio } = h.models;
+  const r = await h.request(h.app).post('/api/servicios').set(h.auth(admin.token)).send({
+    name: 'Rayos X', price: 600, category: base.categoria._id, costoExterno: 350, proveedorExterno: 'Lab Tepic'
+  });
+  expect(r.status).toBe(201);
+  const estudio = r.body.data;
+  expect(estudio.duration ?? null).toBeNull();
+
+  const venta = await Venta.create({
+    items: [{ type: 'servicio', item: estudio._id, quantity: 2, unitPrice: 600, mascota: base.mascota._id }],
+    payments: [{ method: 'efectivo', amount: 1200 }], saleChannel: 'local', status: 'completada'
+  });
+  expect(venta.items[0].costoExterno).toBe(350);
+
+  // Si después el laboratorio sube su precio, la venta ya registrada conserva el costo de su día
+  await Servicio.updateOne({ _id: estudio._id }, { $set: { costoExterno: 400 } });
+  const d = (await reporte()).body.data;
+  expect(d.ventas.servicios).toBe(1200);
+  expect(d.costoVentas.serviciosExternos).toBe(700);
+  expect(d.utilidadBruta).toBe(500);
+});
+
 test('solo administradores pueden ver la rentabilidad', async () => {
   const usuario = await h.login('user');
   expect((await reporte(rangoHoy, usuario.token)).status).toBe(403);

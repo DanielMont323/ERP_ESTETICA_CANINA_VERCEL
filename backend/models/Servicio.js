@@ -28,10 +28,21 @@ const servicioSchema = new mongoose.Schema({
     required: [true, 'El precio del servicio es obligatorio'],
     min: 0
   },
+  // Opcional: los estudios externos (laboratorio, rayos X) no tienen duración en la estética
   duration: {
     type: Number,
-    required: [true, 'La duración es obligatoria'],
-    min: 1
+    min: 0
+  },
+  // Lo que cobra un tercero por cada servicio (p. ej. el laboratorio por un estudio).
+  // Se guarda en cada venta y el reporte de ganancia lo resta como costo.
+  costoExterno: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  proveedorExterno: {
+    type: String,
+    trim: true
   },
   category: {
     type: mongoose.Schema.Types.ObjectId,

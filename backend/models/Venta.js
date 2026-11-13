@@ -35,6 +35,12 @@ const itemVentaSchema = new mongoose.Schema({
     required: true,
     min: 0
   },
+  // Servicios: costo externo por unidad al momento de la venta (p. ej. lo que cobra el laboratorio).
+  // Se copia del servicio para que un cambio posterior de costo no altere ventas pasadas.
+  costoExterno: {
+    type: Number,
+    min: 0
+  },
   subtotal: {
     type: Number,
     required: false,
@@ -220,6 +226,18 @@ const ventaSchema = new mongoose.Schema({
 });
 
 // Calcular totales antes de guardar
+// Copia el costo externo vigente de cada servicio (laboratorio, rayos X...) a la línea de la venta.
+// Solo para líneas que todavía no lo tienen: las ya registradas conservan el costo de su día.
+ventaSchema.pre('save', async function() {
+  const sinCosto = (this.items || []).filter(i => i.type === 'servicio' && i.item && (i.costoExterno === undefined || i.costoExterno === null));
+  if (sinCosto.length === 0) return;
+  const Servicio = require('./Servicio');
+  const ids = [...new Set(sinCosto.map(i => String(i.item)))];
+  const servicios = await Servicio.find({ _id: { $in: ids } }).select('costoExterno').session(this.$session() || null).lean();
+  const costo = new Map(servicios.map(s => [String(s._id), s.costoExterno || 0]));
+  sinCosto.forEach(i => { i.costoExterno = costo.get(String(i.item)) || 0; });
+});
+
 ventaSchema.pre('save', function(next) {
   // Validar que si es Mercado Libre con ajuste financiero manual, se proporcionen total y netIncome válidos
   const isMercadoLibreManual = this.saleChannel === 'mercado_libre' && this.manualFinancials === true;
