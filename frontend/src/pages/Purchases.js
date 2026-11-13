@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useKeyboardFormNavigation } from '../hooks/useKeyboardFormNavigation';
 import { purchasesAPI, suppliersAPI, productsAPI, supplierProductsAPI } from '../services/api';
+import { etiqueta } from '../helpers/etiquetas';
 import toast from 'react-hot-toast';
 import { SkeletonTable } from '../components/Skeleton';
 import Pagination from '../components/Pagination';
@@ -733,14 +734,14 @@ const Purchases = () => {
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     purchase.type === 'contado' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
                   }`}>
-                    {purchase.type}
+                    {etiqueta(purchase.type)}
                   </span>
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     purchase.status === 'pagada' ? 'bg-green-100 text-green-800' : 
                     purchase.status === 'pendiente' ? 'bg-yellow-100 text-yellow-800' : 
                     purchase.status === 'cancelada' ? 'bg-red-100 text-red-800' : 'bg-red-100 text-red-800'
                   }`}>
-                    {purchase.status}
+                    {etiqueta(purchase.status)}
                   </span>
                 </div>
                 <div className="font-bold text-gray-900 dark:text-dark-text">
@@ -801,7 +802,7 @@ const Purchases = () => {
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       purchase.type === 'contado' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
                     }`}>
-                      {purchase.type}
+                      {etiqueta(purchase.type)}
                     </span>
                   </td>
                   <td className="py-5">
@@ -810,7 +811,7 @@ const Purchases = () => {
                       purchase.status === 'pendiente' ? 'bg-yellow-100 text-yellow-800' : 
                       purchase.status === 'cancelada' ? 'bg-red-100 text-red-800' : 'bg-red-100 text-red-800'
                     }`}>
-                      {purchase.status}
+                      {etiqueta(purchase.status)}
                     </span>
                   </td>
                   {user?.role === 'admin' && (

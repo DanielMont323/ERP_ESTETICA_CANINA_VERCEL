@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { costsAPI } from '../services/api';
 import { hoyTepicISO } from '../helpers/dateUtils';
+import { etiqueta } from '../helpers/etiquetas';
 import toast from 'react-hot-toast';
 import { SkeletonTable } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
@@ -256,14 +257,14 @@ const Costs = () => {
                     <td className="py-4 font-medium">{cost.description}</td>
                     <td className="py-4">
                       <span className="capitalize badge badge-info">
-                        {cost.category}
+                        {etiqueta(cost.category)}
                       </span>
                     </td>
                     <td className="py-4">
                       <span className={`capitalize badge badge-${
                         cost.type === 'fijo' ? 'success' : 'warning'
                       }`}>
-                        {cost.type}
+                        {etiqueta(cost.type)}
                       </span>
                     </td>
                     <td className="py-4 text-right font-medium">

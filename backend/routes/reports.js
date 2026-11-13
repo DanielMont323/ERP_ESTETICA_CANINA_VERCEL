@@ -980,16 +980,26 @@ router.get('/dashboard', async (req, res) => {
     const lastMonthTotal = lastMonthSalesValid.reduce((sum, sale) => sum + sale.total, 0);
     const lastMonthCount = lastMonthSalesValid.length;
 
-    // Productos con bajo stock
+    // Comparación justa: el mes en curso contra el MISMO PERIODO del mes anterior
+    // (del día 1 a la misma fecha y hora). Antes se comparaba contra el mes anterior completo
+    // y a mitad de mes siempre salía una caída grande.
+    const transcurrido = today.getTime() - startOfMonth.getTime();
+    const finMismoPeriodo = new Date(Math.min(startOfLastMonth.getTime() + transcurrido, endOfLastMonth.getTime()));
+    const mismoPeriodo = lastMonthSalesValid.filter(s => s.date <= finMismoPeriodo);
+    const samePeriodTotal = mismoPeriodo.reduce((sum, sale) => sum + sale.total, 0);
+    const samePeriodCount = mismoPeriodo.length;
+
+    // Productos con bajo stock: mismo criterio que la lista de "Atención requerida" (stock < mínimo)
     const lowStockProducts = await Producto.countDocuments({
-      $expr: { $lte: ['$stock', '$minStock'] },
+      $expr: { $lt: ['$stock', '$minStock'] },
       isActive: true
     });
 
-    // Cuentas por pagar vencidas
+    // Cuentas por pagar vencidas: vencimiento antes de HOY (día de Tepic), igual que la lista de avisos
+    const inicioHoy = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
     const overdueAccounts = await CuentaPorPagar.countDocuments({
-      status: 'pendiente',
-      dueDate: { $lt: today }
+      status: { $in: ['pendiente', 'vencido'] },
+      dueDate: { $lt: inicioHoy }
     });
 
     // Recordatorios pendientes hoy
@@ -1001,13 +1011,13 @@ router.get('/dashboard', async (req, res) => {
       status: 'pendiente'
     });
 
-    // Crecimientos
-    const salesGrowth = lastMonthTotal > 0 
-      ? ((currentMonthTotal - lastMonthTotal) / lastMonthTotal * 100).toFixed(2)
+    // Crecimientos contra el mismo periodo del mes anterior
+    const salesGrowth = samePeriodTotal > 0
+      ? ((currentMonthTotal - samePeriodTotal) / samePeriodTotal * 100).toFixed(1)
       : 0;
 
-    const salesCountGrowth = lastMonthCount > 0
-      ? ((currentMonthCount - lastMonthCount) / lastMonthCount * 100).toFixed(2)
+    const salesCountGrowth = samePeriodCount > 0
+      ? ((currentMonthCount - samePeriodCount) / samePeriodCount * 100).toFixed(1)
       : 0;
 
     res.json({
@@ -1021,6 +1031,11 @@ router.get('/dashboard', async (req, res) => {
           lastMonth: {
             total: lastMonthTotal,
             count: lastMonthCount
+          },
+          lastMonthSamePeriod: {
+            total: samePeriodTotal,
+            count: samePeriodCount,
+            hasta: finMismoPeriodo
           },
           growth: {
             total: parseFloat(salesGrowth),

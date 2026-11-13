@@ -146,6 +146,19 @@ const Pets = () => {
     return age;
   };
 
+  // "3 años", "1 año", "5 meses" (antes un cachorro aparecía como "0 años")
+  const textoEdad = (birthDate) => {
+    if (!birthDate) return 'Edad sin registrar';
+    const años = calculateAge(birthDate);
+    if (años >= 1) return `${años} ${años === 1 ? 'año' : 'años'}`;
+    const hoy = new Date();
+    const nac = new Date(birthDate);
+    let meses = (hoy.getUTCFullYear() - nac.getUTCFullYear()) * 12 + hoy.getUTCMonth() - nac.getUTCMonth();
+    if (hoy.getUTCDate() < nac.getUTCDate()) meses--;
+    if (meses < 1) return 'Menos de 1 mes';
+    return `${meses} ${meses === 1 ? 'mes' : 'meses'}`;
+  };
+
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('es-MX', {
       style: 'currency',
@@ -346,12 +359,12 @@ const Pets = () => {
                 <div className="flex-1">
                   <h3 className="text-lg font-medium text-gray-900 dark:text-dark-text">{pet.name}</h3>
                   <div className="mt-2 space-y-1">
-                    <div className="flex items-center text-sm text-gray-600 dark:text-dark-textSecondary">
-                      <span className="capitalize">{pet.type}</span> • {pet.breed}
-                    </div>
+                    <p className="text-sm text-gray-600 dark:text-dark-textSecondary">
+                      <span className="capitalize">{pet.type}</span>{pet.breed ? ` · ${pet.breed}` : ''}
+                    </p>
                     <div className="flex items-center text-sm text-gray-600 dark:text-dark-textSecondary">
                       <Calendar className="h-4 w-4 mr-2" />
-                      {calculateAge(pet.birthDate)} años
+                      {textoEdad(pet.birthDate)}
                     </div>
                     <div className="flex items-center text-sm text-gray-600 dark:text-dark-textSecondary">
                       <Scale className="h-4 w-4 mr-2" />

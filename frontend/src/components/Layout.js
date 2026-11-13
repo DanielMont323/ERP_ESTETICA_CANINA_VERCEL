@@ -20,8 +20,6 @@ import {
   LogOut,
   Menu,
   X,
-  Bell,
-  Search,
   Syringe,
   Tag,
   Box,
@@ -108,26 +106,58 @@ const Layout = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [location.pathname, navigate]);
 
+  // Menú agrupado por áreas de trabajo (antes: 20 opciones en una sola lista).
+  const esAdmin = user?.role === 'admin';
   const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: Home, shortcut: 'F1' },
-    { name: 'Productos', href: '/products', icon: Package, shortcut: 'F2' },
-    { name: 'Categorías Productos', href: '/product-categories', icon: Tag },
-    { name: 'Pedidos Proveedores', href: '/low-stock-orders', icon: Box },
-    ...(user?.role === 'admin' ? [{ name: 'Ajustes de Inventario', href: '/inventory-adjustments', icon: ClipboardCheck }] : []),
-    { name: 'Ventas', href: '/sales', icon: ShoppingCart, shortcut: 'F5' },
-    { name: 'Compras', href: '/purchases', icon: PurchasesIcon, shortcut: 'F4' },
-    { name: 'Clientes', href: '/customers', icon: Users, shortcut: 'F6' },
-    { name: 'Mascotas', href: '/pets', icon: Heart, shortcut: 'F7' },
-    { name: 'Carnet Vacunación', href: '/vaccination-cards', icon: Syringe },
-    ...(user?.role === 'admin' ? [{ name: 'Catálogo Vacunas', href: '/vaccines-catalog', icon: Syringe, shortcut: 'F8' }] : []),
-    { name: 'Servicios', href: '/services', icon: Scissors, shortcut: 'F9' },
-    { name: 'Categorías Servicios', href: '/service-categories', icon: Tag },
-    { name: 'Proveedores', href: '/suppliers', icon: Truck, shortcut: 'F3' },
-    { name: 'Cuentas por Pagar', href: '/accounts-payable', icon: FileText, shortcut: 'F10' },
-    { name: 'Costos', href: '/costs', icon: DollarSign },
-    { name: 'Recordatorios', href: '/reminders', icon: Calendar },
-    { name: 'Reportes', href: '/reports', icon: BarChart3, shortcut: 'F11' },
-    { name: 'Configuración', href: '/settings', icon: Settings, shortcut: 'F12' },
+    {
+      titulo: null,
+      items: [
+        { name: 'Inicio', href: '/dashboard', icon: Home, shortcut: 'F1' },
+        { name: 'Ventas', href: '/sales', icon: ShoppingCart, shortcut: 'F5' },
+        { name: 'Recordatorios', href: '/reminders', icon: Calendar },
+      ]
+    },
+    {
+      titulo: 'Clientes y mascotas',
+      items: [
+        { name: 'Clientes', href: '/customers', icon: Users, shortcut: 'F6' },
+        { name: 'Mascotas', href: '/pets', icon: Heart, shortcut: 'F7' },
+        { name: 'Carnet de vacunación', href: '/vaccination-cards', icon: Syringe },
+        ...(esAdmin ? [{ name: 'Catálogo de vacunas', href: '/vaccines-catalog', icon: Syringe, shortcut: 'F8' }] : []),
+      ]
+    },
+    {
+      titulo: 'Servicios',
+      items: [
+        { name: 'Servicios', href: '/services', icon: Scissors, shortcut: 'F9' },
+        { name: 'Categorías de servicios', href: '/service-categories', icon: Tag },
+      ]
+    },
+    {
+      titulo: 'Inventario',
+      items: [
+        { name: 'Productos', href: '/products', icon: Package, shortcut: 'F2' },
+        { name: 'Categorías de productos', href: '/product-categories', icon: Tag },
+        { name: 'Pedidos a proveedores', href: '/low-stock-orders', icon: Box },
+        ...(esAdmin ? [{ name: 'Ajustes de inventario', href: '/inventory-adjustments', icon: ClipboardCheck }] : []),
+      ]
+    },
+    {
+      titulo: 'Compras y finanzas',
+      items: [
+        { name: 'Compras', href: '/purchases', icon: PurchasesIcon, shortcut: 'F4' },
+        { name: 'Proveedores', href: '/suppliers', icon: Truck, shortcut: 'F3' },
+        { name: 'Cuentas por pagar', href: '/accounts-payable', icon: FileText, shortcut: 'F10' },
+        { name: 'Costos', href: '/costs', icon: DollarSign },
+        { name: 'Reportes', href: '/reports', icon: BarChart3, shortcut: 'F11' },
+      ]
+    },
+    {
+      titulo: 'Sistema',
+      items: [
+        { name: 'Configuración', href: '/settings', icon: Settings, shortcut: 'F12' },
+      ]
+    },
   ];
 
   const isActive = (href) => {
@@ -176,13 +206,14 @@ const Layout = () => {
               <Menu className="h-6 w-6" />
             </button>
             
+            {/* El logo ya está en el menú lateral; en el encabezado solo se muestra en celular */}
             <div className="flex items-center space-x-3 flex-1">
-              <img 
-                src="/logo.png" 
-                alt="BARBER DOG" 
-                className="h-10 w-auto object-contain"
+              <img
+                src="/logo.png"
+                alt="BARBER DOG"
+                className="h-10 w-auto object-contain md:hidden"
               />
-              <span className="text-lg font-bold text-brand-burgundy hidden sm:block">BARBER DOG</span>
+              <span className="text-lg font-bold text-brand-burgundy hidden sm:block md:hidden">BARBER DOG</span>
             </div>
             
             <div className="flex items-center space-x-2 sm:space-x-3 ml-2">
@@ -195,10 +226,8 @@ const Layout = () => {
                 {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
 
-              {/* Notifications */}
-              <button className="btn-ghost p-2 rounded-lg">
-                <Bell className="h-5 w-5" />
-              </button>
+              {/* Recordatorios (antes un cuadro flotante que tapaba el encabezado) */}
+              <GlobalReminders />
 
               {/* User dropdown */}
               <div className="relative flex items-center space-x-2 pl-3 border-l border-gray-200 dark:border-dark-border">
@@ -224,37 +253,8 @@ const Layout = () => {
             </div>
           </div>
 
-          {/* Header secundario - búsqueda (solo visible en móvil) */}
-          <div className="px-4 pb-3 md:hidden">
-            <div className="relative w-full text-gray-400 focus-within:text-gray-600">
-              <div className="absolute inset-y-0 left-0 flex items-center pointer-events-none pl-3">
-                <Search className="h-5 w-5" />
-              </div>
-              <input
-                className="block w-full h-full pl-10 pr-3 py-2.5 border border-gray-300 dark:border-dark-inputBorder bg-white dark:bg-dark-input rounded-lg text-gray-900 dark:text-dark-text placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-burgundy focus:border-brand-burgundy sm:text-sm transition-all duration-200"
-                placeholder="Buscar..."
-                type="search"
-              />
-            </div>
-          </div>
-
-          {/* Búsqueda en desktop (mantener en la misma fila) */}
-          <div className="hidden md:flex flex-1 px-4 pb-4">
-            <div className="relative w-full max-w-lg text-gray-400 focus-within:text-gray-600">
-              <div className="absolute inset-y-0 left-0 flex items-center pointer-events-none pl-3">
-                <Search className="h-5 w-5" />
-              </div>
-              <input
-                className="block w-full h-full pl-10 pr-3 py-2.5 border border-gray-300 dark:border-dark-inputBorder bg-white dark:bg-dark-input rounded-lg text-gray-900 dark:text-dark-text placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-burgundy focus:border-brand-burgundy sm:text-sm transition-all duration-200"
-                placeholder="Buscar..."
-                type="search"
-              />
-            </div>
-          </div>
+          {/* Se quitó el buscador global: no estaba conectado a nada. Cada pantalla tiene su propia búsqueda. */}
         </header>
-
-        {/* Global Reminders */}
-        <GlobalReminders />
 
         {/* Main content area */}
         <main className="flex-1 relative overflow-y-auto focus:outline-none">
@@ -281,28 +281,37 @@ const Sidebar = ({ navigation, isActive, onMobileClose, isMobile = false }) => {
         <h1 className="text-xl font-bold text-brand-cream tracking-tight">BARBER DOG</h1>
       </div>
       
-      <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
-        {navigation.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.name}
-              to={item.href}
-              onClick={onMobileClose}
-              className={`sidebar-item ${
-                isActive(item.href) ? 'active' : ''
-              }`}
-            >
-              <Icon className="mr-3 h-5 w-5 flex-shrink-0" />
-              <span className="flex-1">{item.name}</span>
-              {item.shortcut && (
-                <span className="hidden lg:inline-block ml-2 text-xs text-brand-cream opacity-70">
-                  {item.shortcut}
-                </span>
-              )}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 px-3 py-4 overflow-y-auto">
+        {navigation.map((grupo, i) => (
+          <div key={grupo.titulo || i} className={i > 0 ? 'mt-4' : ''}>
+            {grupo.titulo && (
+              <p className="px-3 mb-1 text-[0.7rem] font-semibold uppercase tracking-wider text-brand-cream opacity-60">
+                {grupo.titulo}
+              </p>
+            )}
+            <div className="space-y-0.5">
+              {grupo.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    to={item.href}
+                    onClick={onMobileClose}
+                    className={`sidebar-item ${isActive(item.href) ? 'active' : ''}`}
+                  >
+                    <Icon className="mr-3 h-5 w-5 flex-shrink-0" />
+                    <span className="flex-1">{item.name}</span>
+                    {item.shortcut && (
+                      <span className="hidden lg:inline-block ml-2 text-xs text-brand-cream opacity-70">
+                        {item.shortcut}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
     </div>
   );

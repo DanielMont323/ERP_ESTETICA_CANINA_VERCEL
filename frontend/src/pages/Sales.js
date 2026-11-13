@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useKeyboardFormNavigation } from '../hooks/useKeyboardFormNavigation';
 import { salesAPI, productsAPI, servicesAPI, customersAPI, petsAPI, authAPI } from '../services/api';
+import { etiqueta } from '../helpers/etiquetas';
 import toast from 'react-hot-toast';
 import { SkeletonTable } from '../components/Skeleton';
 import Autocomplete from '../components/Autocomplete';
@@ -1429,7 +1430,7 @@ const Sales = () => {
                       sale.status === 'completada' ? 'success' :
                       sale.status === 'cancelada' ? 'danger' : 'warning'
                     }`}>
-                      {sale.status}
+                      {etiqueta(sale.status)}
                     </span>
                   </td>
                   <td className="py-4 px-4">
@@ -1494,7 +1495,7 @@ const Sales = () => {
                     sale.status === 'completada' ? 'success' :
                     sale.status === 'cancelada' ? 'danger' : 'warning'
                   }`}>
-                    {sale.status}
+                    {etiqueta(sale.status)}
                   </span>
                 </div>
 

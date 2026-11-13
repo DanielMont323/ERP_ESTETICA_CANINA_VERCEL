@@ -97,35 +97,50 @@ const Dashboard = () => {
     return months[month - 1];
   };
 
-  const StatCard = ({ title, value, change, changeType, icon: Icon, color }) => {
+  // Tarjeta de indicador. El ícono es pequeño para que el monto no se corte; "hint" explica contra qué se compara.
+  const StatCard = ({ title, value, change, changeType, hint, icon: Icon, color, onClick }) => {
     return (
-      <div className="card hover:shadow-md transition-shadow duration-200">
+      <div
+        className={`card hover:shadow-md transition-shadow duration-200 ${onClick ? 'cursor-pointer' : ''}`}
+        onClick={onClick}
+      >
         <div className="card-body">
-          <div className="flex items-start justify-between">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-600 dark:text-dark-textSecondary mb-1 truncate">{title}</p>
-              <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-dark-text mb-2">{value}</p>
-              {change !== undefined && (
-                <div className={`flex items-center text-sm ${
-                  changeType === 'positive' ? 'text-success-600' : 'text-danger-600'
-                }`}>
-                  {changeType === 'positive' ? (
-                    <ArrowUp className="h-4 w-4 mr-1 flex-shrink-0" />
-                  ) : (
-                    <ArrowDown className="h-4 w-4 mr-1 flex-shrink-0" />
-                  )}
-                  <span className="truncate">{Math.abs(change)}%</span>
-                </div>
-              )}
-            </div>
-            <div className={`p-3 sm:p-4 rounded-xl ${color} ml-3 sm:ml-4 flex-shrink-0`}>
-              <Icon className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <p className="text-sm font-medium text-gray-600 dark:text-dark-textSecondary">{title}</p>
+            <div className={`p-2 rounded-lg ${color} flex-shrink-0`}>
+              <Icon className="h-4 w-4 text-white" />
             </div>
           </div>
+          <p className="text-2xl xl:text-3xl font-bold text-gray-900 dark:text-dark-text break-words">{value}</p>
+          {change !== undefined && change !== 0 && (
+            <div className={`flex items-center text-sm mt-1 ${
+              changeType === 'positive' ? 'text-success-600' : 'text-danger-600'
+            }`}>
+              {changeType === 'positive' ? (
+                <ArrowUp className="h-4 w-4 mr-1 flex-shrink-0" />
+              ) : (
+                <ArrowDown className="h-4 w-4 mr-1 flex-shrink-0" />
+              )}
+              <span>{Math.abs(change)}%</span>
+            </div>
+          )}
+          {hint && <p className="text-xs text-gray-500 dark:text-dark-textSecondary mt-1">{hint}</p>}
         </div>
       </div>
     );
   };
+
+  const cuentasUrgentes = (remindersData?.accounts || []).filter(
+    acc => acc.urgency === 'vencida' || acc.urgency === 'hoy' || acc.urgency === 'manana'
+  );
+  const resumenUrgentes = ['vencida', 'hoy', 'manana'].map(u => {
+    const grupo = cuentasUrgentes.filter(a => a.urgency === u);
+    const total = grupo.reduce((s, a) => s + (a.amount || 0), 0);
+    const etiqueta = { vencida: grupo.length === 1 ? 'vencida' : 'vencidas', hoy: 'vence' + (grupo.length === 1 ? '' : 'n') + ' hoy', manana: 'vence' + (grupo.length === 1 ? '' : 'n') + ' mañana' }[u];
+    return grupo.length ? `${grupo.length} ${etiqueta} (${formatCurrency(total)})` : null;
+  }).filter(Boolean);
+  const mesAnterior = getMonthName(((new Date().getMonth() + 11) % 12) + 1);
+  const mismoPeriodo = dashboardData?.sales?.lastMonthSamePeriod;
 
   if (loading) {
     return <SkeletonStats />;
@@ -133,46 +148,39 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* Alert for urgent accounts */}
-      {showAlert && remindersData?.accounts?.filter(acc => acc.urgency === 'vencida' || acc.urgency === 'hoy' || acc.urgency === 'manana').length > 0 && (
-        <div className="bg-warning-50 border border-warning-200 rounded-xl p-4 animate-slide-up">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start">
-              <AlertTriangle className="h-5 w-5 text-warning-600 mt-0.5 mr-3" />
-              <div>
-                <h3 className="font-semibold text-warning-900">
-                  {remindersData.accounts.filter(acc => acc.urgency === 'vencida' || acc.urgency === 'hoy' || acc.urgency === 'manana').length} cuenta{remindersData.accounts.filter(acc => acc.urgency === 'vencida' || acc.urgency === 'hoy' || acc.urgency === 'manana').length > 1 ? 's' : ''} por pagar requiere{remindersData.accounts.filter(acc => acc.urgency === 'vencida' || acc.urgency === 'hoy' || acc.urgency === 'manana').length > 1 ? 'n' : ''} atención
-                </h3>
-                <div className="mt-2 space-y-1">
-                  {remindersData.accounts.filter(acc => acc.urgency === 'vencida' || acc.urgency === 'hoy' || acc.urgency === 'manana').map((account) => (
-                    <div key={account.id} className="text-sm text-warning-800">
-                      <span className="font-medium">{account.title}</span>
-                      {' - '}
-                      {formatCurrency(account.amount)}
-                      {' - '}
-                      {account.urgencyText}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-semibold text-brand-burgundy">Resumen del negocio</h1>
+        <p className="mt-1 text-sm text-gray-600 dark:text-dark-textSecondary">
+          {new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Mazatlan' })}
+        </p>
+      </div>
+
+      {/* Aviso compacto de cuentas por pagar urgentes (antes listaba cada cuenta y ocupaba media pantalla) */}
+      {showAlert && cuentasUrgentes.length > 0 && (
+        <div className="bg-warning-50 border border-warning-200 rounded-xl px-4 py-3 animate-slide-up">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <AlertTriangle className="h-5 w-5 text-warning-600 flex-shrink-0" />
+            <p className="flex-1 min-w-[12rem] text-sm text-warning-900">
+              <span className="font-semibold">Cuentas por pagar: </span>
+              {resumenUrgentes.join(' · ')}
+            </p>
+            <button
+              onClick={() => navigate('/accounts-payable')}
+              className="text-sm font-medium text-brand-burgundy hover:underline"
+            >
+              Ver cuentas
+            </button>
             <button
               onClick={() => setShowAlert(false)}
               className="text-warning-400 hover:text-warning-600 transition-colors"
+              aria-label="Cerrar aviso"
             >
               <X className="h-5 w-5" />
             </button>
           </div>
         </div>
       )}
-
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-brand-burgundy">Dashboard</h1>
-        <p className="mt-1 text-sm text-gray-600 dark:text-dark-textSecondary">
-          Bienvenido al sistema ERP. Aquí tienes un resumen de tu negocio.
-        </p>
-      </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -181,6 +189,7 @@ const Dashboard = () => {
           value={formatCurrency(dashboardData?.sales?.currentMonth?.total || 0)}
           change={dashboardData?.sales?.growth?.total}
           changeType={dashboardData?.sales?.growth?.total >= 0 ? 'positive' : 'negative'}
+          hint={mismoPeriodo ? `vs. ${formatCurrency(mismoPeriodo.total)} a esta fecha de ${mesAnterior.toLowerCase()}` : undefined}
           icon={DollarSign}
           color="bg-brand-burgundy"
         />
@@ -189,20 +198,25 @@ const Dashboard = () => {
           value={dashboardData?.sales?.currentMonth?.count || 0}
           change={dashboardData?.sales?.growth?.count}
           changeType={dashboardData?.sales?.growth?.count >= 0 ? 'positive' : 'negative'}
+          hint={mismoPeriodo ? `vs. ${mismoPeriodo.count} a esta fecha de ${mesAnterior.toLowerCase()}` : undefined}
           icon={ShoppingCart}
           color="bg-success-600"
         />
         <StatCard
-          title="Productos con bajo stock"
+          title="Productos bajo el mínimo"
           value={dashboardData?.alerts?.lowStockProducts || 0}
+          hint="Stock menor al mínimo"
           icon={Package}
           color="bg-warning-600"
+          onClick={() => navigate('/low-stock-orders')}
         />
         <StatCard
-          title="Cuentas vencidas"
+          title="Cuentas por pagar vencidas"
           value={dashboardData?.alerts?.overdueAccounts || 0}
+          hint="Vencimiento antes de hoy"
           icon={FileText}
           color="bg-danger-600"
+          onClick={() => navigate('/accounts-payable')}
         />
       </div>
 

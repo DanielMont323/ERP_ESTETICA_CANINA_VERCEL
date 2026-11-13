@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { accountsPayableAPI, purchasesAPI } from '../services/api';
+import { etiqueta } from '../helpers/etiquetas';
 import toast from 'react-hot-toast';
 import { SkeletonTable } from '../components/Skeleton';
 import Pagination from '../components/Pagination';
@@ -433,7 +434,7 @@ const AccountsPayable = () => {
                         account.status === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
                         'bg-red-100 text-red-800'
                       }`}>
-                        {account.status}
+                        {etiqueta(account.status)}
                       </span>
                     </td>
                     <td className="py-4">
@@ -506,7 +507,7 @@ const AccountsPayable = () => {
                   account.status === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
                   'bg-red-100 text-red-800'
                 }`}>
-                  {account.status}
+                  {etiqueta(account.status)}
                 </span>
               </div>
 
