@@ -3,6 +3,7 @@ import { useKeyboardFormNavigation } from '../hooks/useKeyboardFormNavigation';
 import { salesAPI, productsAPI, servicesAPI, customersAPI, petsAPI, authAPI } from '../services/api';
 import { etiqueta } from '../helpers/etiquetas';
 import toast from 'react-hot-toast';
+import { alDobleClic } from '../helpers/dobleClic';
 import { SkeletonTable } from '../components/Skeleton';
 import Autocomplete from '../components/Autocomplete';
 import {
@@ -1421,6 +1422,10 @@ const Sales = () => {
                     <tr
                       className={`table-row-divider cursor-pointer ${abierta ? 'bg-gray-50 dark:bg-dark-hover' : ''} ${sale.status === 'cancelada' ? 'opacity-60' : ''}`}
                       onClick={() => setVentaAbierta(abierta ? null : sale._id)}
+                      onDoubleClick={alDobleClic(() => {
+                        if (userRole === 'admin' && sale.status !== 'cancelada') { setVentaAbierta(null); handleEditSale(sale); }
+                      })}
+                      title={userRole === 'admin' && sale.status !== 'cancelada' ? 'Clic: ver artículos · Doble clic: editar' : 'Clic: ver artículos'}
                     >
                       <td>
                         <p className="text-gray-900 dark:text-dark-text">{formatCalendarDate(sale.date)}</p>

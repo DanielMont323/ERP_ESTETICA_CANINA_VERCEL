@@ -3,6 +3,7 @@ import { useKeyboardFormNavigation } from '../hooks/useKeyboardFormNavigation';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { petsAPI, customersAPI, salesAPI, vaccinationCardAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import { alDobleClic, TITULO_DOBLE_CLIC } from '../helpers/dobleClic';
 import { Skeleton, SkeletonCard } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
 import Pagination from '../components/Pagination';
@@ -353,7 +354,7 @@ const Pets = () => {
       {/* Pets Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {pets.map((pet) => (
-          <div key={pet._id} className="card">
+          <div key={pet._id} className="card cursor-pointer" onDoubleClick={alDobleClic(() => handleEditPet(pet))} title={TITULO_DOBLE_CLIC}>
             <div className="card-body">
               <div className="flex items-start justify-between">
                 <div className="flex-1">

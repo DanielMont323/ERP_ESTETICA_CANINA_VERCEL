@@ -3,6 +3,7 @@ import { useKeyboardFormNavigation } from '../hooks/useKeyboardFormNavigation';
 import { purchasesAPI, suppliersAPI, productsAPI, supplierProductsAPI } from '../services/api';
 import { etiqueta } from '../helpers/etiquetas';
 import toast from 'react-hot-toast';
+import { alDobleClic } from '../helpers/dobleClic';
 import { SkeletonTable } from '../components/Skeleton';
 import Pagination from '../components/Pagination';
 import Autocomplete from '../components/Autocomplete';
@@ -812,6 +813,10 @@ const Purchases = () => {
                     <tr
                       className={`table-row-divider cursor-pointer ${abierta ? 'bg-gray-50 dark:bg-dark-hover' : ''} ${purchase.status === 'cancelada' ? 'opacity-60' : ''}`}
                       onClick={() => setCompraAbierta(abierta ? null : purchase._id)}
+                      onDoubleClick={alDobleClic(() => {
+                        if (user?.role === 'admin' && !purchase.recuperada?.origen && purchase.status !== 'cancelada') { setCompraAbierta(null); handleEditClick(purchase); }
+                      })}
+                      title={user?.role === 'admin' && !purchase.recuperada?.origen && purchase.status !== 'cancelada' ? 'Clic: ver artículos · Doble clic: editar' : 'Clic: ver artículos'}
                     >
                       <td>{formatCalendarDate(purchase.date)}</td>
                       <td>

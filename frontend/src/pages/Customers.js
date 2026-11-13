@@ -4,6 +4,7 @@ import { useEscapeKey } from '../hooks/useEscapeKey';
 import { customersAPI, salesAPI } from '../services/api';
 import { formatCalendarDate } from '../helpers/dateUtils';
 import toast from 'react-hot-toast';
+import { alDobleClic, TITULO_DOBLE_CLIC } from '../helpers/dobleClic';
 import { Skeleton, SkeletonCard } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
 import Pagination from '../components/Pagination';
@@ -239,7 +240,7 @@ const Customers = () => {
       {/* Customers Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {customers.map((customer) => (
-          <div key={customer._id} className="card">
+          <div key={customer._id} className="card cursor-pointer" onDoubleClick={alDobleClic(() => handleEdit(customer))} title={TITULO_DOBLE_CLIC}>
             <div className="card-body">
               <div className="flex items-start justify-between">
                 <div className="flex-1">

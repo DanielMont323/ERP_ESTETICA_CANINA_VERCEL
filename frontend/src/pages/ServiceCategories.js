@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { serviceCategoriesAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import { alDobleClic, TITULO_DOBLE_CLIC } from '../helpers/dobleClic';
 import { Skeleton, SkeletonCard } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
 import {
@@ -141,7 +142,7 @@ const ServiceCategories = () => {
       {/* Categories Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {categories.map((category) => (
-          <div key={category._id} className="card hover:shadow-lg transition-shadow">
+          <div key={category._id} className="card hover:shadow-lg transition-shadow cursor-pointer" onDoubleClick={alDobleClic(() => handleEdit(category))} title={TITULO_DOBLE_CLIC}>
             <div className="card-body">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center">

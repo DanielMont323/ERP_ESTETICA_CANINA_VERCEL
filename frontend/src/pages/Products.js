@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { productsAPI, productCategoriesAPI, suppliersAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import { alDobleClic, TITULO_DOBLE_CLIC } from '../helpers/dobleClic';
 import { SkeletonTable } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
 import Pagination from '../components/Pagination';
@@ -481,7 +482,7 @@ const Products = () => {
                   : product.price;
                 const margen = product.margin !== null && product.margin !== undefined ? parseFloat(product.margin) : null;
                 return (
-                  <tr key={product._id} className="table-row-divider">
+                  <tr key={product._id} className="table-row-divider cursor-pointer" onDoubleClick={alDobleClic(() => { if (!showDeleted) handleEdit(product); })} title={showDeleted ? undefined : TITULO_DOBLE_CLIC}>
                     <td>
                       <p className="font-medium text-gray-900 dark:text-dark-text line-clamp-2" title={product.name}>{product.name}</p>
                       <p className="text-xs text-gray-500 dark:text-dark-textSecondary truncate" title={`${product.sku || 'Sin SKU'} · ${product.supplier?.name || 'Sin proveedor'}`}>

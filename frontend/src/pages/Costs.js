@@ -3,6 +3,7 @@ import { costsAPI } from '../services/api';
 import { hoyTepicISO } from '../helpers/dateUtils';
 import { etiqueta } from '../helpers/etiquetas';
 import toast from 'react-hot-toast';
+import { alDobleClic, TITULO_DOBLE_CLIC } from '../helpers/dobleClic';
 import { SkeletonTable } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
 import Pagination from '../components/Pagination';
@@ -253,7 +254,7 @@ const Costs = () => {
                   cost.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   cost.category?.toLowerCase().includes(searchTerm.toLowerCase())
                 ).map((cost, index) => (
-                  <tr key={cost._id} className="table-row-divider">
+                  <tr key={cost._id} className="table-row-divider cursor-pointer" onDoubleClick={alDobleClic(() => handleEditCost(cost))} title={TITULO_DOBLE_CLIC}>
                     <td className="py-4 font-medium">{cost.description}</td>
                     <td className="py-4">
                       <span className="capitalize badge badge-info">

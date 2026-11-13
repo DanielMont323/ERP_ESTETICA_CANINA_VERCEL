@@ -3,6 +3,7 @@ import { useKeyboardFormNavigation } from '../hooks/useKeyboardFormNavigation';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { suppliersAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import { alDobleClic, TITULO_DOBLE_CLIC } from '../helpers/dobleClic';
 import { Skeleton, SkeletonCard } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
 import Pagination from '../components/Pagination';
@@ -228,7 +229,7 @@ const Suppliers = () => {
           supplier.contact?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           supplier.phone?.includes(searchTerm)
         ).map((supplier) => (
-          <div key={supplier._id} className="card">
+          <div key={supplier._id} className="card cursor-pointer" onDoubleClick={alDobleClic(() => handleEditSupplier(supplier))} title={TITULO_DOBLE_CLIC}>
             <div className="card-body">
               <div className="flex items-start justify-between">
                 <div className="flex-1">

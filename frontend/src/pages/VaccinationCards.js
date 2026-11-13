@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { vaccinationCardAPI, vaccinesAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import { alDobleClic, TITULO_DOBLE_CLIC } from '../helpers/dobleClic';
 import { Skeleton, SkeletonCard } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
 import { useEscapeKey } from '../hooks/useEscapeKey';
@@ -245,7 +246,7 @@ const VaccinationCards = () => {
       {/* Cards Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {filteredCards.map((card) => (
-          <div key={card._id} className="card hover:shadow-lg transition-shadow">
+          <div key={card._id} className="card hover:shadow-lg transition-shadow cursor-pointer" onDoubleClick={alDobleClic(() => handleEditCard(card))} title={TITULO_DOBLE_CLIC}>
             <div className="card-body">
               {/* Pet Info */}
               <div className="flex items-start justify-between mb-4 pb-4 border-b border-gray-200 dark:border-dark-border">
