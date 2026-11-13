@@ -16,7 +16,8 @@ import {
   Trash2,
   Package,
   AlertTriangle,
-  EyeOff
+  EyeOff,
+  RotateCcw
 } from 'lucide-react';
 
 const Products = () => {
@@ -342,6 +343,33 @@ const Products = () => {
     return { color: 'success', text: 'Vigente' };
   };
 
+  // Un solo estado por producto, el más importante (antes había dos columnas: Caducidad y Estado).
+  // Orden: inactivo → agotado → caducado → caduca pronto → bajo el mínimo → disponible.
+  const getEstadoProducto = (product) => {
+    const fechaCad = product.expirationDate
+      ? new Date(product.expirationDate).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' })
+      : null;
+    if (product.isActive === false) return { color: 'gray', texto: 'Inactivo' };
+    if (product.stock === 0) return { color: 'danger', texto: 'Agotado' };
+    if (product.expirationDate) {
+      const hoy = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mazatlan' }));
+      const dias = Math.ceil((new Date(product.expirationDate) - hoy) / 86400000);
+      if (dias < 0) return { color: 'danger', texto: 'Caducado', detalle: `desde ${fechaCad}` };
+      if (dias <= 30) return { color: 'warning', texto: dias === 0 ? 'Caduca hoy' : `Caduca en ${dias} ${dias === 1 ? 'día' : 'días'}`, detalle: fechaCad };
+    }
+    if (product.stock <= product.minStock) return { color: 'warning', texto: 'Bajo stock', detalle: fechaCad ? `caduca ${fechaCad}` : null };
+    return { color: 'success', texto: 'Disponible', detalle: fechaCad ? `caduca ${fechaCad}` : null };
+  };
+
+  // Barra de stock: llena respecto al stock ideal (o al doble del mínimo); color según el mínimo
+  const getStockVisual = (product) => {
+    const referencia = product.idealStock > 0 ? product.idealStock : (product.minStock > 0 ? product.minStock * 2 : Math.max(product.stock, 1));
+    const porcentaje = Math.max(0, Math.min(100, Math.round((product.stock / referencia) * 100)));
+    if (product.stock === 0) return { porcentaje: 0, barra: 'bg-danger-500', texto: 'text-danger-600' };
+    if (product.stock <= product.minStock) return { porcentaje, barra: 'bg-warning-500', texto: 'text-warning-600' };
+    return { porcentaje, barra: 'bg-success-500', texto: 'text-gray-900 dark:text-dark-text' };
+  };
+
   if (loading) {
     return <SkeletonTable rows={5} columns={8} />;
   }
@@ -436,106 +464,89 @@ const Products = () => {
     <table className="table table-fixed w-full">
       <thead className="sticky top-0 bg-gray-50 dark:bg-dark-surface z-10">
         <tr>
-          <th className="w-[17%]">Producto</th>
-          <th className="w-[9%]">Categoría</th>
-          <th className="w-[9%]">Proveedor</th>
-          <th className="w-[7%]">Stock</th>
-          <th className="w-[7%]">Costo</th>
-          <th className="w-[7%]">Precio</th>
-          <th className="w-[6%]">Descuento</th>
-          <th className="w-[9%]">Precio Final</th>
-          <th className="w-[6%]">Margen</th>
-          <th className="w-[8%]">Caducidad</th>
-          <th className="w-[8%]">Estado</th>
-          <th className="w-[7%]">Acciones</th>
+          <th className="w-[31%]">Producto</th>
+          <th className="w-[15%]">Categoría</th>
+          <th className="w-[15%]">Stock</th>
+          <th className="w-[15%] text-right">Precio</th>
+          <th className="w-[16%]">Estado</th>
+          <th className="w-[8%] text-right"><span className="sr-only">Acciones</span></th>
         </tr>
       </thead>
       <tbody>
-              {filteredProducts.map((product, index) => {
-                const stockStatus = getStockStatus(product);
-                const expirationStatus = getExpirationStatus(product);
+              {filteredProducts.map((product) => {
+                const estado = getEstadoProducto(product);
+                const stock = getStockVisual(product);
+                const precioFinal = product.discountPercentage > 0
+                  ? product.price * (1 - product.discountPercentage / 100)
+                  : product.price;
+                const margen = product.margin !== null && product.margin !== undefined ? parseFloat(product.margin) : null;
                 return (
                   <tr key={product._id} className="table-row-divider">
-                    <td className="">
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-dark-text">{product.name}</p>
-                        <p className="text-sm text-gray-500 dark:text-dark-textSecondary">SKU: {product.sku}</p>
-                      </div>
+                    <td>
+                      <p className="font-medium text-gray-900 dark:text-dark-text line-clamp-2" title={product.name}>{product.name}</p>
+                      <p className="text-xs text-gray-500 dark:text-dark-textSecondary truncate" title={`${product.sku || 'Sin SKU'} · ${product.supplier?.name || 'Sin proveedor'}`}>
+                        {product.sku || 'Sin SKU'} · {product.supplier?.name || 'Sin proveedor'}
+                      </p>
                     </td>
-                    <td className="">
-                      <span>{product.category?.name || 'Sin categoría'}</span>
-                    </td>
-                    <td className="">
-                      <span>{product.supplier?.name || 'Sin proveedor'}</span>
-                    </td>
-                    <td className="">
-                      <div className="text-right">
-                        <p className="font-medium">{product.stock}</p>
-                        <p className="text-sm text-gray-500 dark:text-dark-textSecondary">Mín: {product.minStock}</p>
-                      </div>
-                    </td>
-                    <td className="text-right">{formatCurrency(product.cost)}</td>
-                    <td className="text-right">{formatCurrency(product.price)}</td>
-                    <td className="text-right">
-                      {product.discountPercentage > 0 ? (
-                        <span className="text-success-600 font-medium">{product.discountPercentage}%</span>
-                      ) : (
-                        <span className="text-gray-400 dark:text-dark-textSecondary">-</span>
-                      )}
-                    </td>
-                    <td className="text-right font-semibold">
-                      {product.discountPercentage > 0 ? (
-                        <div>
-                          <span className="text-gray-400 dark:text-dark-textSecondary line-through text-sm">{formatCurrency(product.price)}</span>
-                          <div className="text-success-600">{formatCurrency(product.price * (1 - product.discountPercentage / 100))}</div>
-                        </div>
-                      ) : (
-                        formatCurrency(product.price)
-                      )}
-                    </td>
-                    <td className="text-right">
-                      <span className={`font-medium ${
-                        product.margin && parseFloat(product.margin) > 30 ? 'text-success-600' : 
-                        product.margin && parseFloat(product.margin) > 15 ? 'text-warning-600' : 
-                        product.margin && parseFloat(product.margin) <= 15 ? 'text-danger-600' : 'text-gray-400'
-                      }`}>
-                        {product.margin !== null && product.margin !== undefined ? `${product.margin}%` : '—'}
-                      </span>
-                    </td>
-                    <td className="">
-                      <span className={`badge badge-${expirationStatus.color}`}>
-                        {expirationStatus.text}
-                      </span>
-                    </td>
-                    <td className="">
-                      <span className={`badge badge-${stockStatus.color}`}>
-                        {stockStatus.text}
-                      </span>
+                    <td className="text-gray-600 dark:text-dark-textSecondary">
+                      <span className="line-clamp-2">{product.category?.name || 'Sin categoría'}</span>
                     </td>
                     <td>
-                      <div className="flex items-center space-x-2">
+                      <p>
+                        <span className={`font-medium ${stock.texto}`}>{product.stock}</span>
+                        <span className="text-xs text-gray-500 dark:text-dark-textSecondary"> / mín {product.minStock}</span>
+                      </p>
+                      <div className="mt-1.5 h-1 w-full max-w-[7rem] rounded-full bg-gray-100 dark:bg-dark-surface" aria-hidden="true">
+                        <div className={`h-1 rounded-full ${stock.barra}`} style={{ width: `${stock.porcentaje}%` }} />
+                      </div>
+                    </td>
+                    <td className="text-right">
+                      <p>
+                        {product.discountPercentage > 0 && (
+                          <span className="text-xs text-gray-400 dark:text-dark-textSecondary line-through mr-1">{formatCurrency(product.price)}</span>
+                        )}
+                        <span className="font-semibold text-gray-900 dark:text-dark-text">{formatCurrency(precioFinal)}</span>
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-dark-textSecondary">
+                        costo {formatCurrency(product.cost)}
+                        {margen !== null && !isNaN(margen) && (
+                          <span className={margen > 30 ? 'text-success-600' : margen > 15 ? 'text-warning-600' : 'text-danger-600'}> · {Math.round(margen)}%</span>
+                        )}
+                      </p>
+                    </td>
+                    <td>
+                      <span className={`badge badge-${estado.color}`}>{estado.texto}</span>
+                      {estado.detalle && (
+                        <p className="text-xs text-gray-500 dark:text-dark-textSecondary mt-1">{estado.detalle}</p>
+                      )}
+                    </td>
+                    <td className="text-right">
+                      <div className="table-actions">
                         {showDeleted ? (
                           <button
                             onClick={() => handleRestore(product._id)}
-                            className="text-success-600 hover:text-success-900"
+                            className="p-1.5 rounded-md text-success-600 hover:bg-success-50"
                             title="Restaurar producto"
+                            aria-label="Restaurar producto"
                           >
-                            ♻️
+                            <RotateCcw className="h-4 w-4" />
                           </button>
                         ) : (
                           <>
                             <button
                               onClick={() => handleEdit(product)}
-                              className="text-brand-burgundy hover:text-primary-900"
+                              className="p-1.5 rounded-md text-gray-500 hover:text-brand-burgundy hover:bg-gray-100 dark:hover:bg-dark-hover"
                               title="Editar"
+                              aria-label="Editar producto"
                             >
                               <Edit className="h-4 w-4" />
                             </button>
                             {userRole === 'admin' && (
                               <button
                                 onClick={() => handleDelete(product._id)}
-                                className="text-danger-600 hover:text-danger-900"
+                                className="p-1.5 rounded-md text-gray-500 hover:text-danger-600 hover:bg-danger-50"
                                 title="Eliminar"
+                                aria-label="Eliminar producto"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
