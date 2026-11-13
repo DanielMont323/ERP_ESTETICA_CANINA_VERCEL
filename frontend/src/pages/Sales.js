@@ -1495,7 +1495,7 @@ const Sales = () => {
                       <tr className="bg-gray-50 dark:bg-dark-hover">
                         <td colSpan={7} className="pt-0">
                           <div className="ml-[13%] pl-3 pb-1 max-w-2xl">
-                            <table className="w-full text-sm">
+                            <table className="table-detalle w-full text-sm">
                               <tbody>
                                 {articulos.map((item, i) => (
                                   <tr key={i}>

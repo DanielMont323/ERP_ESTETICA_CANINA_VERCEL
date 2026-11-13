@@ -138,6 +138,19 @@
     position: relative;
   }
 
+  /* Detalle desplegado dentro de una fila (artículos de una venta o compra): compacto y sin líneas */
+  .table table.table-detalle td {
+    @apply py-1 px-0 border-0 text-sm;
+  }
+
+  .table table.table-detalle td + td {
+    @apply pl-4;
+  }
+
+  .table table.table-detalle tr:hover {
+    @apply bg-transparent;
+  }
+
   /* Celda de acciones: íconos alineados a la derecha sin romper la celda de la tabla */
   .table-actions {
     @apply inline-flex items-center justify-end gap-2 whitespace-nowrap;

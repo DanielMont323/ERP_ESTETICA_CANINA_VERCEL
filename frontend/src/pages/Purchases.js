@@ -15,7 +15,9 @@ import {
   TrendingDown,
   Edit,
   PlusCircle,
-  MinusCircle
+  MinusCircle,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 
 // Compra que se borró y se reconstruyó desde su recordatorio de pago: no tiene productos.
@@ -618,6 +620,37 @@ const Purchases = () => {
 
   const filteredPurchases = purchases;
 
+  // Compra con el detalle de artículos desplegado en la tabla
+  const [compraAbierta, setCompraAbierta] = useState(null);
+
+  // Días entre hoy (Tepic) y una fecha de calendario guardada a medianoche/mediodía UTC
+  const diasHasta = (fecha) => {
+    const hoy = hoyTepicISO();
+    const d = new Date(fecha).toISOString().slice(0, 10);
+    return Math.round((Date.parse(d) - Date.parse(hoy)) / 86400000);
+  };
+
+  // Columna "Vence": contado no vence; crédito muestra la fecha y cuánto falta o cuánto lleva vencida
+  const infoVencimiento = (purchase) => {
+    if (purchase.status === 'cancelada') return { texto: '—', clase: 'text-gray-400' };
+    if (purchase.type === 'contado') {
+      return { texto: 'Contado', clase: 'text-gray-600 dark:text-dark-textSecondary', detalle: purchase.paymentMethod ? etiqueta(purchase.paymentMethod) : null };
+    }
+    if (!purchase.dueDate) return { texto: 'Crédito', clase: 'text-gray-600' };
+    if (purchase.status === 'pagada') return { texto: formatCalendarDate(purchase.dueDate), clase: 'text-gray-600 dark:text-dark-textSecondary', detalle: 'Pagada' };
+    const dias = diasHasta(purchase.dueDate);
+    if (dias < 0) return { texto: formatCalendarDate(purchase.dueDate), clase: 'text-danger-600 font-medium', detalle: `vencida hace ${-dias} ${dias === -1 ? 'día' : 'días'}` };
+    if (dias === 0) return { texto: formatCalendarDate(purchase.dueDate), clase: 'text-warning-600 font-medium', detalle: 'vence hoy' };
+    return { texto: formatCalendarDate(purchase.dueDate), clase: dias <= 3 ? 'text-warning-600' : 'text-gray-900 dark:text-dark-text', detalle: `en ${dias} ${dias === 1 ? 'día' : 'días'}` };
+  };
+
+  const estadoCompra = (purchase) => {
+    if (purchase.status === 'cancelada') return { color: 'danger', texto: 'Cancelada' };
+    if (purchase.status === 'pagada') return { color: 'success', texto: 'Pagada' };
+    if (purchase.type === 'credito' && purchase.dueDate && diasHasta(purchase.dueDate) < 0) return { color: 'danger', texto: 'Vencida' };
+    return { color: 'warning', texto: etiqueta(purchase.status) };
+  };
+
   if (loading) {
     return <SkeletonTable rows={5} columns={8} />;
   }
@@ -757,90 +790,128 @@ const Purchases = () => {
           <table className="table table-fixed w-full">
             <thead className="sticky top-0 bg-gray-50 dark:bg-dark-surface z-10">
               <tr>
-                <th className="w-[8%]">Fecha</th>
-                <th className="w-[16%]">Proveedor</th>
-                <th className="w-[9%]">Folio</th>
-                <th className="w-[20%]">Productos</th>
-                <th className="w-[7%]">Subtotal</th>
-                <th className="w-[6%]">IVA</th>
-                <th className="w-[6%]">Descuento</th>
-                <th className="w-[10%]">Total</th>
-                <th className="w-[6%]">Tipo</th>
-                <th className="w-[6%]">Estado</th>
-                {user?.role === 'admin' && <th className="w-[6%]">Acciones</th>}
+                <th className="w-[11%]">Fecha</th>
+                <th className="w-[22%]">Proveedor · folio</th>
+                <th className="w-[23%]">Artículos</th>
+                <th className="w-[14%]">Vence</th>
+                <th className="w-[13%] text-right">Total</th>
+                <th className="w-[9%]">Estado</th>
+                {user?.role === 'admin' && <th className="w-[8%] text-right"><span className="sr-only">Acciones</span></th>}
               </tr>
             </thead>
             <tbody>
-              {filteredPurchases.map((purchase, index) => (
-                <tr key={purchase._id} className="table-row-divider">
-                  <td className="">{formatCalendarDate(purchase.date)}</td>
-                  <td className="">
-                    <span className="truncate block" title={purchase.proveedor?.name}>{purchase.proveedor?.name}</span>
-                  </td>
-                  <td className="">
-                    <span className="truncate block" title={purchase.invoice || '-'}>{purchase.invoice || '-'}</span>
-                  </td>
-                  <td className="">
-                    {purchase.recuperada?.origen && <CompraRecuperadaAviso purchase={purchase} />}
-                    {purchase.items?.map((item, idx) => (
-                      <div key={idx} className="text-sm">
-                        <span className="truncate block" title={item.productName || item.product?.name || 'Producto no disponible'}>{item.productName || item.product?.name || 'Producto no disponible'}</span> x {item.quantity}
-                      </div>
-                    ))}
-                  </td>
-                  <td className="">{formatCurrency(purchase.baseTotal || purchase.total)}</td>
-                  <td className={`${purchase.totalIVA > 0 ? 'text-blue-600' : 'text-gray-400 dark:text-dark-textSecondary'}`}>
-                    {formatCurrency(purchase.totalIVA || 0)}
-                  </td>
-                  <td className="text-green-600">
-                    {purchase.totalDiscount > 0 ? formatCurrency(purchase.totalDiscount) : '-'}
-                  </td>
-                  <td className="font-bold text-gray-900 dark:text-dark-text">
-                    {formatCurrency(purchase.total)}
-                  </td>
-                  <td className="">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      purchase.type === 'contado' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {etiqueta(purchase.type)}
-                    </span>
-                  </td>
-                  <td className="">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      purchase.status === 'pagada' ? 'bg-green-100 text-green-800' : 
-                      purchase.status === 'pendiente' ? 'bg-yellow-100 text-yellow-800' : 
-                      purchase.status === 'cancelada' ? 'bg-red-100 text-red-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {etiqueta(purchase.status)}
-                    </span>
-                  </td>
-                  {user?.role === 'admin' && (
-                    <td>
-                      <div className="table-actions">
-                      {!purchase.recuperada?.origen && (
-                        <button
-                          onClick={() => handleEditClick(purchase)}
-                          disabled={purchase.status === 'cancelada'}
-                          className="text-blue-600 hover:text-blue-800 disabled:text-gray-400 dark:text-dark-textSecondary disabled:cursor-not-allowed"
-                          title="Editar compra"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
+              {filteredPurchases.map((purchase) => {
+                const abierta = compraAbierta === purchase._id;
+                const items = purchase.items || [];
+                const piezas = items.reduce((s, i) => s + (i.quantity || 0), 0);
+                const nombre = i => i.productName || i.product?.name || 'Producto no disponible';
+                const vence = infoVencimiento(purchase);
+                const estado = estadoCompra(purchase);
+                return (
+                  <React.Fragment key={purchase._id}>
+                    <tr
+                      className={`table-row-divider cursor-pointer ${abierta ? 'bg-gray-50 dark:bg-dark-hover' : ''} ${purchase.status === 'cancelada' ? 'opacity-60' : ''}`}
+                      onClick={() => setCompraAbierta(abierta ? null : purchase._id)}
+                    >
+                      <td>{formatCalendarDate(purchase.date)}</td>
+                      <td>
+                        <p className="font-medium text-gray-900 dark:text-dark-text truncate" title={purchase.proveedor?.name}>{purchase.proveedor?.name || 'Sin proveedor'}</p>
+                        <p className="text-xs text-gray-500 dark:text-dark-textSecondary truncate" title={purchase.invoice || ''}>
+                          {purchase.invoice ? `Folio ${purchase.invoice}` : 'Sin folio'}
+                        </p>
+                      </td>
+                      <td>
+                        {purchase.recuperada?.origen ? (
+                          <CompraRecuperadaAviso purchase={purchase} />
+                        ) : (
+                          <>
+                            <p className="flex items-center gap-1 text-gray-900 dark:text-dark-text">
+                              {abierta ? <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-400" /> : <ChevronRight className="h-4 w-4 flex-shrink-0 text-gray-400" />}
+                              {piezas} {piezas === 1 ? 'pieza' : 'piezas'}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-dark-textSecondary truncate pl-5" title={items.map(nombre).join(', ')}>
+                              {items[0] ? nombre(items[0]) : '—'}{items.length > 1 ? ` +${items.length - 1}` : ''}
+                            </p>
+                          </>
+                        )}
+                      </td>
+                      <td>
+                        <p className={vence.clase}>{vence.texto}</p>
+                        {vence.detalle && <p className="text-xs text-gray-500 dark:text-dark-textSecondary">{vence.detalle}</p>}
+                      </td>
+                      <td className="text-right">
+                        <p className="font-semibold text-gray-900 dark:text-dark-text">{formatCurrency(purchase.total)}</p>
+                        {(purchase.totalIVA > 0 || purchase.totalDiscount > 0) && (
+                          <p className="text-xs text-gray-500 dark:text-dark-textSecondary">
+                            {purchase.totalIVA > 0 && `IVA ${formatCurrency(purchase.totalIVA)}`}
+                            {purchase.totalIVA > 0 && purchase.totalDiscount > 0 && ' · '}
+                            {purchase.totalDiscount > 0 && <span className="text-success-600">−{formatCurrency(purchase.totalDiscount)}</span>}
+                          </p>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`badge badge-${estado.color}`}>{estado.texto}</span>
+                      </td>
+                      {user?.role === 'admin' && (
+                        <td className="text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="table-actions">
+                            {!purchase.recuperada?.origen && purchase.status !== 'cancelada' && (
+                              <button
+                                onClick={() => handleEditClick(purchase)}
+                                className="p-1.5 rounded-md text-gray-500 hover:text-brand-burgundy hover:bg-gray-100 dark:hover:bg-dark-hover"
+                                title="Editar compra"
+                                aria-label="Editar compra"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </button>
+                            )}
+                            {purchase.status !== 'cancelada' && (
+                              <button
+                                onClick={() => handleCancelPurchase(purchase._id)}
+                                className="p-1.5 rounded-md text-gray-500 hover:text-danger-600 hover:bg-danger-50"
+                                title="Cancelar compra"
+                                aria-label="Cancelar compra"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       )}
-                      {purchase.status !== 'cancelada' && (
-                        <button
-                          onClick={() => handleCancelPurchase(purchase._id)}
-                          className="text-red-600 hover:text-red-800"
-                          title="Cancelar compra"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      )}
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
+                    </tr>
+                    {abierta && (
+                      <tr className="bg-gray-50 dark:bg-dark-hover">
+                        <td colSpan={user?.role === 'admin' ? 7 : 6} className="pt-0">
+                          <div className="ml-[11%] pl-3 pb-1 max-w-2xl">
+                            {items.length > 0 ? (
+                              <table className="table-detalle w-full text-sm">
+                                <tbody>
+                                  {items.map((item, i) => (
+                                    <tr key={i}>
+                                      <td className="py-1 pl-0 pr-3 border-0 text-gray-700 dark:text-dark-text">{nombre(item)}</td>
+                                      <td className="py-1 pr-3 border-0 text-right text-gray-500 whitespace-nowrap">{item.quantity} × {formatCurrency(item.unitCost ?? item.baseUnitCost ?? 0)}</td>
+                                      <td className="py-1 pr-0 border-0 text-right font-medium whitespace-nowrap">{formatCurrency(item.subtotal ?? (item.quantity * (item.baseUnitCost || 0)))}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              <p className="text-sm text-gray-500 py-1">Sin productos registrados.</p>
+                            )}
+                            <p className="mt-2 text-xs text-gray-500 dark:text-dark-textSecondary">
+                              {etiqueta(purchase.type)}
+                              {purchase.type === 'contado' && purchase.paymentMethod && ` · ${etiqueta(purchase.paymentMethod)}`}
+                              {purchase.baseTotal > 0 && ` · Subtotal ${formatCurrency(purchase.baseTotal)}`}
+                              {purchase.user?.name && ` · Registró: ${purchase.user.name}`}
+                              {purchase.notes && ` · Nota: ${purchase.notes}`}
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
