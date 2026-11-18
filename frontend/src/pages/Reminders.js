@@ -8,6 +8,7 @@ import { alDobleClic, TITULO_DOBLE_CLIC } from '../helpers/dobleClic';
 import { Skeleton, SkeletonCard } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
 import DetallePagoModal from '../components/DetallePagoModal';
+import CompletarDosisModal from '../components/CompletarDosisModal';
 import {
   Plus,
   Calendar,
@@ -165,6 +166,7 @@ const Reminders = () => {
   const [filtroTipo, setFiltroTipo] = useState('todos');
   const [ocupado, setOcupado] = useState(null);
   const [detallePago, setDetallePago] = useState(null);
+  const [completarDosis, setCompletarDosis] = useState(null);
   const [hoy, setHoy] = useState(hoyTepicISO());
   const [automaticReminders, setAutomaticReminders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -206,6 +208,8 @@ const Reminders = () => {
   const refrescar = () => { fetchReminders(); avisarCambioRecordatorios(); };
 
   const completar = async (item) => {
+    // Vacunas y desparasitaciones del carnet: preguntar si se aplicó (registrarla) o solo cerrar
+    if (item.origen === 'carnet') { setCompletarDosis(item); return; }
     setOcupado(item.id);
     try {
       if (item.origen === 'carnet') await remindersAPI.atenderCarnet(item.carnetId, item.aplicacionId);
@@ -525,6 +529,13 @@ const Reminders = () => {
           recordatorio={detallePago}
           onClose={() => setDetallePago(null)}
           onEditar={() => { const r = detallePago.original; setDetallePago(null); handleEditReminder(r); }}
+        />
+      )}
+      {completarDosis && (
+        <CompletarDosisModal
+          item={completarDosis}
+          onClose={() => setCompletarDosis(null)}
+          onListo={() => { setCompletarDosis(null); refrescar(); }}
         />
       )}
       {/* Delete Confirmation Modal */}

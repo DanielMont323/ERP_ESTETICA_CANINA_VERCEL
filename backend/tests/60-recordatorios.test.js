@@ -138,6 +138,40 @@ describe('carnet: próxima dosis de vacunas y desparasitantes', () => {
     void parvo;
   });
 
+  test('"Se aplicó aquí": agrega la nueva aplicación (mismo producto y tipo), cierra la anterior y crea el siguiente recordatorio', async () => {
+    const c = await carnet([{ vacuna: 'Desp X', nombre: 'Desp X', tipo: 'desparasitante', fecha: dia(-35), proximaDosis: dia(-5), diasProximaDosis: 30, observaciones: 'original' }]);
+    const ap = c.vacunas[0];
+    const url = `/api/recordatorios/carnet/${c._id}/${ap._id}/aplicar`;
+    expect((await h.request(h.app).post(url).set(h.auth(admin.token)).send({ fecha: hoyTepic(), diasProximaDosis: 30 })).status).toBe(201);
+    // doble clic: no duplica
+    expect((await h.request(h.app).post(url).set(h.auth(admin.token)).send({ fecha: hoyTepic(), diasProximaDosis: 30 })).status).toBe(409);
+
+    const db = await CarnetVacunacion.findById(c._id).lean();
+    expect(db.vacunas).toHaveLength(2);
+    expect(db.vacunas[0]).toMatchObject({ nombre: 'Desp X', observaciones: 'original', atendido: { nombre: 'Usuario admin' } });
+    expect(db.vacunas[1]).toMatchObject({ vacuna: 'Desp X', nombre: 'Desp X', tipo: 'desparasitante', diasProximaDosis: 30 });
+    expect(db.vacunas[1].fecha.toISOString().slice(0, 10)).toBe(hoyTepic());
+    expect(db.vacunas[1].proximaDosis.toISOString().slice(0, 10)).toBe(new Date(dia(30)).toISOString().slice(0, 10));
+
+    const p = (await bandeja()).body.data.items;
+    expect(p).toHaveLength(1);
+    expect(p[0]).toMatchObject({ estado: 'pendiente', dia: new Date(dia(30)).toISOString().slice(0, 10) });
+  });
+
+  test('"Se aplicó aquí": fecha pasada permitida, futura no; sin próxima dosis no crea recordatorio', async () => {
+    const c = await carnet([{ vacuna: 'Rabia', nombre: 'Rabia', tipo: 'vacuna', fecha: dia(-400), proximaDosis: dia(-35) }]);
+    const url = `/api/recordatorios/carnet/${c._id}/${c.vacunas[0]._id}/aplicar`;
+    const manana = new Date(dia(1)).toISOString().slice(0, 10);
+    expect((await h.request(h.app).post(url).set(h.auth(admin.token)).send({ fecha: manana })).status).toBe(400);
+    expect((await h.request(h.app).post(url).set(h.auth(admin.token)).send({ diasProximaDosis: -3 })).status).toBe(400);
+    const ayer = new Date(dia(-1)).toISOString().slice(0, 10);
+    expect((await h.request(h.app).post(url).set(h.auth(admin.token)).send({ fecha: ayer })).status).toBe(201);
+    const db = await CarnetVacunacion.findById(c._id).lean();
+    expect(db.vacunas[1].fecha.toISOString()).toBe(`${ayer}T12:00:00.000Z`);
+    expect(db.vacunas[1].proximaDosis).toBeNull();
+    expect((await bandeja()).body.data.items).toHaveLength(0);
+  });
+
   test('si ya se aplicó la siguiente dosis, la anterior cuenta como completada (sin escribir nada)', async () => {
     await carnet([
       { vacuna: 'Desp', nombre: 'Desp', tipo: 'desparasitante', fecha: dia(-60), proximaDosis: dia(-30) },

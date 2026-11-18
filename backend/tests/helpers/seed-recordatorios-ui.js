@@ -21,6 +21,7 @@ const CuentaPorPagar = require('../../models/CuentaPorPagar');
 const Recordatorio = require('../../models/Recordatorio');
 const Producto = require('../../models/Producto');
 const Compra = require('../../models/Compra');
+const InventoryLayer = require('../../models/InventoryLayer');
 const { hoyTepic } = require('../../helpers/recordatoriosBandeja');
 
 const DIA = 86400000;
@@ -52,6 +53,11 @@ const dia = (d, hora = '00:00:00') => new Date(new Date(`${hoyTepic()}T${hora}Z`
 
   const shampoo = await Producto.create({ name: 'Shampoo Demo 1L', sku: 'DEMO-SH', cost: 120, price: 220, stock: 10, category: 'General' });
   const toallas = await Producto.create({ name: 'Toallas Demo', sku: 'DEMO-TO', cost: 45, price: 90, stock: 20, category: 'General' });
+  // Capas FIFO que cuadran con el stock (necesarias para los ajustes de inventario)
+  for (const [prod, costo] of [[shampoo, 120], [toallas, 45]]) {
+    await InventoryLayer.create({ producto: prod._id, quantity: prod.stock, initialQuantity: prod.stock, remainingQuantity: prod.stock, unitCost: costo, totalCost: costo * prod.stock, costSource: 'costo_capturado', source: 'ajuste_entrada', isInitialLayer: false, receivedDate: dia(-20, '12:00:00'), notes: 'Datos de prueba' });
+    await Producto.updateOne({ _id: prod._id }, { $set: { fifoInitialized: true } });
+  }
   const compra = await Compra.create({ proveedor: prov._id, type: 'credito', user: admin._id, date: dia(-15, '12:00:00'), dueDate: dia(0, '12:00:00'), invoice: 'FAC-DEMO-77',
     items: [{ product: shampoo._id, quantity: 10, baseUnitCost: 120, unitCost: 120, hasTax: false }, { product: toallas._id, quantity: 6, baseUnitCost: 50, unitCost: 50, hasTax: false }] });
   const cuenta = await CuentaPorPagar.create({ proveedor: prov._id, monto: 1500, montoBase: 1500, subtotal: 1500, saldo: 1500, dueDate: dia(0, '12:00:00'), receiptNumber: 'DEMO-1', compra: compra._id,

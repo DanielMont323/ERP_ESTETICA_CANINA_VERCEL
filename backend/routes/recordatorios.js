@@ -6,7 +6,7 @@ const Mascota = require('../models/Mascota');
 const Producto = require('../models/Producto');
 const { getCurrentDateGMT7 } = require('../helpers/timezone');
 const mongoose = require('mongoose');
-const { construirBandeja, quien } = require('../helpers/recordatoriosBandeja');
+const { construirBandeja, quien, hoyTepic } = require('../helpers/recordatoriosBandeja');
 const { detallePago } = require('../helpers/recordatorioPago');
 const router = express.Router();
 
@@ -344,6 +344,59 @@ router.patch('/carnet/:carnetId/:aplicacionId/atender', async (req, res) => {
 // @desc    Registrar que se avisó al dueño. NO completa el recordatorio.
 router.patch('/carnet/:carnetId/:aplicacionId/notificar-dueno', async (req, res) => {
   await marcarAplicacion(req, res, 'duenoNotificado', 'Ya se había registrado el aviso al dueño', 'Aviso al dueño registrado');
+});
+
+// @route   POST /api/recordatorios/carnet/:carnetId/:aplicacionId/aplicar
+// @desc    "Se aplicó aquí": agrega la NUEVA aplicación al carnet (mismo producto y tipo que la anterior)
+//          y marca como atendido el recordatorio de la anterior, en un solo guardado.
+//          Body: { fecha?: 'AAAA-MM-DD' (hoy por defecto, no futura), diasProximaDosis?: número, observaciones? }
+//          No toca inventario: lo que se cobra se registra en Ventas (que también llena el carnet).
+router.post('/carnet/:carnetId/:aplicacionId/aplicar', async (req, res) => {
+  try {
+    const { carnetId, aplicacionId } = req.params;
+    if (!mongoose.isValidObjectId(carnetId) || !mongoose.isValidObjectId(aplicacionId)) {
+      return res.status(400).json({ success: false, message: 'Identificador inválido' });
+    }
+    const { fecha, diasProximaDosis, observaciones } = req.body || {};
+    const hoy = hoyTepic();
+    if (fecha !== undefined && fecha !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return res.status(400).json({ success: false, message: 'Fecha inválida' });
+    }
+    const dia = fecha || hoy;
+    if (dia > hoy) return res.status(400).json({ success: false, message: 'La fecha de aplicación no puede ser futura' });
+    const dias = diasProximaDosis === undefined || diasProximaDosis === null || diasProximaDosis === '' ? null : Number(diasProximaDosis);
+    if (dias !== null && (!Number.isInteger(dias) || dias < 0 || dias > 3650)) {
+      return res.status(400).json({ success: false, message: 'Días para la próxima dosis inválidos' });
+    }
+
+    const carnet = await CarnetVacunacion.findById(carnetId);
+    if (!carnet) return res.status(404).json({ success: false, message: 'Carnet no encontrado' });
+    const anterior = carnet.vacunas.id(aplicacionId);
+    if (!anterior) return res.status(404).json({ success: false, message: 'Aplicación no encontrada en el carnet' });
+    if (anterior.atendido?.fecha) return res.status(409).json({ success: false, message: 'El recordatorio ya estaba completado' });
+
+    // Convención del sistema: hoy → hora actual de Tepic; otro día → mediodía de ese día
+    const fechaAplicacion = dia === hoy ? getCurrentDateGMT7() : new Date(`${dia}T12:00:00Z`);
+    const proximaDosis = dias ? new Date(new Date(`${dia}T12:00:00Z`).getTime() + dias * 86400000) : null;
+
+    carnet.vacunas.push({
+      vacuna: anterior.vacuna,
+      nombre: anterior.nombre,
+      tipo: anterior.tipo,
+      fecha: fechaAplicacion,
+      proximaDosis,
+      diasProximaDosis: dias,
+      observaciones: (observaciones || '').trim() || undefined
+    });
+    anterior.atendido = { fecha: new Date(), ...quien(req.user) };
+    await carnet.save();
+
+    const nueva = carnet.vacunas[carnet.vacunas.length - 1];
+    res.status(201).json({ success: true, data: nueva, message: 'Aplicación registrada en el carnet' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Error al registrar la aplicación' });
+  }
 });
 
 async function marcarAplicacion(req, res, campo, msgYa, msgOk) {

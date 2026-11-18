@@ -80,7 +80,9 @@ function deCarnet(carnet, ap, siguiente, ahora) {
     puedeNotificarDueno: true,
     mascota: { id: mascota?._id || null, nombre: mascota?.name || carnet.nombreMascota },
     dueno: { id: dueno?._id || null, nombre: dueno?.name || carnet.nombrePropietario, telefono: dueno?.phone || null },
-    aplicadaEl: ap.fecha
+    aplicadaEl: ap.fecha,
+    // Para proponer la siguiente dosis al registrar "se aplicó aquí"
+    diasSugeridos: ap.diasProximaDosis || (ap.fecha && ap.proximaDosis ? Math.max(0, Math.round((new Date(ap.proximaDosis) - new Date(ap.fecha)) / 86400000)) : null)
   };
 }
 

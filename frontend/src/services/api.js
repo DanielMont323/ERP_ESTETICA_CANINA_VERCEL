@@ -269,6 +269,7 @@ export const remindersAPI = {
   getBandeja: (vista = 'pendientes') => api.get('/recordatorios/bandeja', { params: { vista } }),
   notificarDueno: (id) => api.patch(`/recordatorios/${id}/notificar-dueno`),
   getDetallePago: (id) => api.get(`/recordatorios/${id}/detalle-pago`),
+  aplicarCarnet: (carnetId, aplicacionId, data) => api.post(`/recordatorios/carnet/${carnetId}/${aplicacionId}/aplicar`, data),
   atenderCarnet: (carnetId, aplicacionId) => api.patch(`/recordatorios/carnet/${carnetId}/${aplicacionId}/atender`),
   notificarDuenoCarnet: (carnetId, aplicacionId) => api.patch(`/recordatorios/carnet/${carnetId}/${aplicacionId}/notificar-dueno`),
 };
@@ -277,6 +278,9 @@ export const remindersAPI = {
 export const inventoryAPI = {
   getAdjustments: (params) => api.get('/inventario/ajustes', { params }),
   createAdjustment: (data) => api.post('/inventario/ajustes', data),
+  // Editar = anular el original y registrar el corregido; eliminar = anular (nunca se borra)
+  updateAdjustment: (id, data) => api.put(`/inventario/ajustes/${id}`, data),
+  cancelAdjustment: (id) => api.delete(`/inventario/ajustes/${id}`),
 };
 
 // Reports services
