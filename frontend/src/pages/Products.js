@@ -55,6 +55,7 @@ const Products = () => {
     isPerishable: false
   });
   const [filter, setFilter] = useState('all');
+  const [proveedorFiltro, setProveedorFiltro] = useState(''); // '' = todos los proveedores
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 50,
@@ -87,7 +88,7 @@ const Products = () => {
       fetchProducts();
     }, 300);
     return () => clearTimeout(debounceTimer);
-  }, [searchTerm, filter]);
+  }, [searchTerm, filter, proveedorFiltro]);
 
   // Listener para evento personalizado de F2 contextual (nuevo producto)
   useEffect(() => {
@@ -139,6 +140,9 @@ const Products = () => {
         }
         if (searchTerm) {
           params.search = searchTerm;
+        }
+        if (proveedorFiltro) {
+          params.supplier = proveedorFiltro;
         }
         if (filter === 'low-stock') {
           params.lowStock = 'true';
@@ -419,6 +423,20 @@ const Products = () => {
                   className="form-input pl-10"
                 />
               </div>
+            </div>
+            <div className="sm:w-56">
+              <select
+                value={proveedorFiltro}
+                onChange={(e) => { setProveedorFiltro(e.target.value); setPagination(p => ({ ...p, page: 1 })); }}
+                className={`form-input ${proveedorFiltro ? 'ring-1 ring-brand-burgundy' : ''}`}
+                aria-label="Filtrar por proveedor"
+                title="Productos de ese proveedor: su proveedor principal, su catálogo o lo que se le ha comprado"
+              >
+                <option value="">Todos los proveedores</option>
+                {[...suppliers].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es')).map(s => (
+                  <option key={s._id} value={s._id}>{s.name}</option>
+                ))}
+              </select>
             </div>
             <div className="flex flex-wrap gap-2 sm:gap-2">
               <button

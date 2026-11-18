@@ -151,10 +151,22 @@ router.get('/search', authenticateToken, async (req, res) => {
 // @desc    Obtener todos los productos
 router.get('/', async (req, res) => {
   try {
-    const { category, active, lowStock, search, page = 1, limit = 50 } = req.query;
+    const { category, active, lowStock, search, supplier, page = 1, limit = 50 } = req.query;
     let query = { isDeleted: { $ne: true } };
 
     if (category) query.category = category;
+    // Filtro por proveedor: el producto es de ese proveedor si es su proveedor principal, si está en su
+    // catálogo (producto-proveedor) o si se le ha comprado (compras no canceladas). Solo lectura.
+    if (supplier) {
+      if (!mongoose.isValidObjectId(supplier)) {
+        return res.status(400).json({ success: false, message: 'Proveedor inválido' });
+      }
+      const [deCatalogo, comprados] = await Promise.all([
+        SupplierProduct.distinct('product', { supplier, isActive: { $ne: false } }),
+        Compra.distinct('items.product', { proveedor: supplier, status: { $ne: 'cancelada' } })
+      ]);
+      query = { $and: [query, { $or: [{ supplier }, { _id: { $in: [...deCatalogo, ...comprados] } }] }] };
+    }
     if (active !== undefined) query.isActive = active === 'true';
     if (lowStock === 'true') {
       query.$expr = { $lte: ['$stock', '$minStock'] };
