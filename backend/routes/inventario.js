@@ -7,7 +7,7 @@ const FIFOInitialization = require('../models/FIFOInitialization');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const { startOfDayGMT7 } = require('../helpers/timezone');
-const { ajustarInventario } = require('../helpers/ajusteInventario');
+const { ajustarInventario, anularAjuste } = require('../helpers/ajusteInventario');
 const router = express.Router();
 
 // @route   POST /api/inventario/inicializar-fifo
@@ -304,7 +304,8 @@ router.post('/ajustes', authenticateToken, requireAdmin, async (req, res) => {
 router.get('/ajustes', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
-    const filtro = { source: 'ajuste', type: { $in: ['ajuste_entrada', 'ajuste_salida'] } };
+    // Las anulaciones no se listan aparte: se muestran como estado del ajuste original
+    const filtro = { source: 'ajuste', type: { $in: ['ajuste_entrada', 'ajuste_salida'] }, originalMovement: null };
     if (req.query.producto && mongoose.isValidObjectId(req.query.producto)) filtro.producto = req.query.producto;
     const ajustes = await InventoryMovement.find(filtro)
       .sort({ date: -1, _id: -1 }).limit(limit)
@@ -312,10 +313,67 @@ router.get('/ajustes', authenticateToken, requireAdmin, async (req, res) => {
       .populate('user', 'name')
       .select('producto type quantity unitCost totalCost adjustmentReason notes date user stockAntes stockContado')
       .lean();
-    res.json({ success: true, data: ajustes });
+    const anulaciones = await InventoryMovement.find({ originalMovement: { $in: ajustes.map(a => a._id) }, source: 'ajuste' })
+      .populate('user', 'name').select('originalMovement date user notes').lean();
+    const porOriginal = new Map(anulaciones.map(a => [String(a.originalMovement), a]));
+    res.json({
+      success: true,
+      data: ajustes.map(a => {
+        const an = porOriginal.get(String(a._id));
+        return { ...a, anulado: an ? { fecha: an.date, usuario: an.user?.name || null, nota: an.notes || '' } : null };
+      })
+    });
   } catch (error) {
     console.error('Error al obtener ajustes:', error);
     res.status(500).json({ success: false, message: 'Error al obtener los ajustes' });
+  }
+});
+
+// @route   DELETE /api/inventario/ajustes/:id
+// @desc    Anula un ajuste (no lo borra): registra el movimiento inverso y regresa el stock. Solo admin.
+router.delete('/ajustes/:id', authenticateToken, requireAdmin, async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Identificador inválido' });
+  const session = await mongoose.startSession();
+  try {
+    let r;
+    await session.withTransaction(async () => {
+      r = await anularAjuste({ movimientoId: req.params.id, userId: req.user._id, nota: 'Ajuste eliminado (anulado)' }, session);
+    });
+    res.json({ success: true, message: `Ajuste anulado: stock de ${r.stockAntes} a ${r.stockDespues}`, data: r });
+  } catch (error) {
+    if (!error.httpStatus) console.error('Error al anular ajuste:', error);
+    res.status(error.httpStatus || 500).json({ success: false, message: error.httpStatus ? error.message : 'Error al anular el ajuste' });
+  } finally {
+    await session.endSession();
+  }
+});
+
+// @route   PUT /api/inventario/ajustes/:id
+// @desc    Corrige un ajuste: anula el original y registra el corregido, en una sola transacción.
+//          Body: igual que POST (producto, tipo, cantidad, motivo, notas?, costoUnitario?, stockEsperado?, stockContado?).
+//          stockEsperado es el stock que tendría el producto SIN el ajuste original.
+router.put('/ajustes/:id', authenticateToken, requireAdmin, async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Identificador inválido' });
+  const { producto, tipo, cantidad, motivo, notas, costoUnitario, stockEsperado, stockContado } = req.body;
+  const session = await mongoose.startSession();
+  try {
+    let anulacion; let nuevo;
+    await session.withTransaction(async () => {
+      anulacion = await anularAjuste({ movimientoId: req.params.id, userId: req.user._id, nota: 'Ajuste corregido (editado)' }, session);
+      nuevo = await ajustarInventario({
+        productoId: producto, tipo, cantidad, motivo, notas, costoUnitario, stockEsperado, stockContado, userId: req.user._id
+      }, session);
+    });
+    res.json({
+      success: true,
+      message: `Ajuste corregido: stock de ${anulacion.stockAntes} a ${nuevo.stockDespues}`,
+      data: { ...nuevo, anulacion }
+    });
+  } catch (error) {
+    if (!error.httpStatus) console.error('Error al corregir ajuste:', error);
+    res.status(error.httpStatus || 500).json({ success: false, message: error.httpStatus ? error.message : 'Error al corregir el ajuste' });
+  } finally {
+    await session.endSession();
   }
 });
 

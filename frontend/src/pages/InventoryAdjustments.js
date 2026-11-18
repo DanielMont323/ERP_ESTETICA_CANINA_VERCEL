@@ -4,7 +4,8 @@ import { useSearchParams } from 'react-router-dom';
 import { inventoryAPI, productsAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import Autocomplete from '../components/Autocomplete';
-import { ClipboardCheck } from 'lucide-react';
+import { ClipboardCheck, Edit, Trash2 } from 'lucide-react';
+import ConfirmModal from '../components/ConfirmModal';
 
 // Qué quiere registrar la persona, en sus palabras. "conteo" calcula entrada o salida solo.
 const OPCIONES = [
@@ -42,6 +43,8 @@ const InventoryAdjustments = () => {
   const [guardando, setGuardando] = useState(false);
   const [historial, setHistorial] = useState([]);
   const [cargandoHistorial, setCargandoHistorial] = useState(true);
+  const [editando, setEditando] = useState(null); // ajuste del historial que se está corrigiendo
+  const [porAnular, setPorAnular] = useState(null);
 
   const cargarHistorial = useCallback(async () => {
     try {
@@ -77,7 +80,9 @@ const InventoryAdjustments = () => {
   }, [productoDeLaUrl, user?.role]);
 
   const op = OPCIONES.find(o => o.id === opcion);
-  const stock = producto ? producto.stock : 0;
+  // Al editar, el stock de referencia es el que habría SIN el ajuste original (se anula al guardar)
+  const mismoProducto = !!(editando && producto && String(editando.producto?._id) === String(producto._id));
+  const stock = producto ? producto.stock - (mismoProducto ? editando.quantity : 0) : 0;
 
   // Cálculo de lo que se va a registrar
   let tipo = op.tipo || (opcion === 'otro' ? tipoOtro : null);
@@ -98,13 +103,43 @@ const InventoryAdjustments = () => {
   const excede = tipo === 'salida' && piezasValidas && piezas > stock;
   const listo = producto && tipo && piezasValidas && !excede && !faltaNota && !guardando;
 
-  const limpiar = () => { setCantidad(''); setContado(''); setCosto(''); setNotas(''); };
+  const limpiar = () => { setCantidad(''); setContado(''); setCosto(''); setNotas(''); setEditando(null); };
+
+  const empezarEdicion = async (a) => {
+    setEditando(a);
+    await seleccionarProducto(a.producto?._id);
+    const piezasOrig = Math.abs(a.quantity);
+    const tipoOrig = a.type === 'ajuste_salida' ? 'salida' : 'entrada';
+    const o = a.adjustmentReason === 'conteo_fisico' ? 'conteo'
+      : a.adjustmentReason === 'devolucion_cliente' ? 'devolucion'
+        : OPCIONES.find(x => x.motivo === a.adjustmentReason)?.id || 'otro';
+    setOpcion(o);
+    if (o === 'otro') setTipoOtro(tipoOrig);
+    setContado(o === 'conteo' && a.stockContado !== undefined && a.stockContado !== null ? String(a.stockContado) : '');
+    setCantidad(o === 'conteo' ? '' : String(piezasOrig));
+    setCosto(tipoOrig === 'entrada' && a.unitCost ? String(Math.round(a.unitCost * 100) / 100) : '');
+    setNotas(a.notes || '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const anular = async () => {
+    const a = porAnular;
+    try {
+      const r = await inventoryAPI.cancelAdjustment(a._id);
+      toast.success(r.data.message);
+      if (producto && String(producto._id) === String(a.producto?._id)) setProducto(p => ({ ...p, stock: r.data.data.stockDespues }));
+      if (editando && editando._id === a._id) limpiar();
+      cargarHistorial();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'No se pudo eliminar el ajuste');
+    }
+  };
 
   const registrar = async () => {
     if (!listo) return;
     setGuardando(true);
     try {
-      const r = await inventoryAPI.createAdjustment({
+      const datos = {
         producto: producto._id,
         tipo,
         cantidad: piezas,
@@ -113,7 +148,8 @@ const InventoryAdjustments = () => {
         costoUnitario: tipo === 'entrada' && costo !== '' ? Number(costo) : undefined,
         stockEsperado: stock,
         stockContado: opcion === 'conteo' ? parseInt(contado, 10) : undefined
-      });
+      };
+      const r = editando ? await inventoryAPI.updateAdjustment(editando._id, datos) : await inventoryAPI.createAdjustment(datos);
       toast.success(r.data.message);
       setProducto(p => ({ ...p, stock: r.data.data.stockDespues }));
       limpiar();
@@ -146,6 +182,15 @@ const InventoryAdjustments = () => {
 
       <div className="card">
         <div className="card-body space-y-5">
+          {editando && (
+            <div className="rounded-lg border border-blue-300 bg-blue-50 dark:bg-transparent p-3 text-sm text-blue-900 dark:text-dark-textSecondary flex flex-wrap items-center justify-between gap-2">
+              <span>
+                Editando el ajuste del <strong>{formatFecha(editando.date)}</strong> ({editando.quantity > 0 ? '+' : ''}{editando.quantity} {editando.producto?.name}).
+                Al guardar se anula el original y se registra el corregido; ambos quedan en el historial.
+              </span>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={limpiar}>Cancelar edición</button>
+            </div>
+          )}
           <div>
             <label className="form-label">1. Producto</label>
             <Autocomplete
@@ -159,7 +204,8 @@ const InventoryAdjustments = () => {
             />
             {producto && (
               <p className="mt-2 text-sm text-gray-700 dark:text-dark-textSecondary">
-                Stock en el sistema: <span className="font-bold text-lg">{stock}</span> piezas
+                {mismoProducto ? 'Stock sin el ajuste que estás editando' : 'Stock en el sistema'}: <span className="font-bold text-lg">{stock}</span> piezas
+                {mismoProducto && <span className="text-xs text-gray-500"> (hoy el sistema tiene {producto.stock})</span>}
               </p>
             )}
           </div>
@@ -239,7 +285,7 @@ const InventoryAdjustments = () => {
           <div className="flex justify-end gap-2">
             <button type="button" className="btn btn-secondary btn-md" onClick={limpiar} disabled={guardando}>Limpiar</button>
             <button type="button" className="btn btn-primary btn-md" onClick={registrar} disabled={!listo}>
-              {guardando ? 'Registrando...' : 'Registrar ajuste'}
+              {guardando ? 'Guardando...' : editando ? 'Guardar corrección' : 'Registrar ajuste'}
             </button>
           </div>
         </div>
@@ -265,12 +311,13 @@ const InventoryAdjustments = () => {
                     <th className="py-2 pr-3 text-right">Piezas</th>
                     <th className="py-2 pr-3 text-right">Costo</th>
                     <th className="py-2 pr-3">Quién</th>
-                    <th className="py-2">Nota</th>
+                    <th className="py-2 pr-3">Nota</th>
+                    <th className="py-2 text-right"><span className="sr-only">Acciones</span></th>
                   </tr>
                 </thead>
                 <tbody>
                   {historial.map(a => (
-                    <tr key={a._id} className="border-b border-gray-100 dark:border-dark-border align-top">
+                    <tr key={a._id} className={`border-b border-gray-100 dark:border-dark-border align-top ${a.anulado ? 'opacity-60' : ''} ${editando?._id === a._id ? 'bg-blue-50 dark:bg-transparent' : ''}`}>
                       <td className="py-2 pr-3 whitespace-nowrap">{formatFecha(a.date)}</td>
                       <td className="py-2 pr-3">{a.producto?.name || '—'}</td>
                       <td className="py-2 pr-3">{NOMBRES_MOTIVO[a.adjustmentReason] || '—'}</td>
@@ -279,10 +326,27 @@ const InventoryAdjustments = () => {
                       </td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">{formatCurrency(a.totalCost)}</td>
                       <td className="py-2 pr-3">{a.user?.name || '—'}</td>
-                      <td className="py-2 text-gray-600 dark:text-dark-textSecondary">
+                      <td className="py-2 pr-3 text-gray-600 dark:text-dark-textSecondary">
+                        {a.anulado && (
+                          <span className="badge badge-gray mb-1" title={a.anulado.nota}>
+                            {/editado/.test(a.anulado.nota) ? 'Corregido' : 'Eliminado'} el {formatFecha(a.anulado.fecha)}{a.anulado.usuario ? ` por ${a.anulado.usuario}` : ''}
+                          </span>
+                        )}
                         {a.notes || ''}
                         {a.stockContado !== undefined && a.stockContado !== null && (
                           <span className="block text-xs">Sistema {a.stockAntes} · contado {a.stockContado}</span>
+                        )}
+                      </td>
+                      <td className="py-2 text-right whitespace-nowrap">
+                        {!a.anulado && (
+                          <span className="table-actions">
+                            <button type="button" onClick={() => empezarEdicion(a)} className="p-1.5 rounded-md text-gray-500 hover:text-brand-burgundy hover:bg-gray-100 dark:hover:bg-dark-hover" title="Editar ajuste" aria-label="Editar ajuste">
+                              <Edit className="h-4 w-4" />
+                            </button>
+                            <button type="button" onClick={() => setPorAnular(a)} className="p-1.5 rounded-md text-gray-500 hover:text-danger-600 hover:bg-danger-50" title="Eliminar ajuste" aria-label="Eliminar ajuste">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -293,6 +357,16 @@ const InventoryAdjustments = () => {
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={!!porAnular}
+        onClose={() => setPorAnular(null)}
+        onConfirm={anular}
+        title="Eliminar ajuste"
+        message={porAnular ? `Se deshará el ajuste de ${porAnular.quantity > 0 ? '+' : ''}${porAnular.quantity} ${porAnular.producto?.name || ''}: el stock regresa a como estaba. El ajuste queda en el historial marcado como eliminado.` : ''}
+        confirmText="Eliminar"
+        type="danger"
+      />
     </div>
   );
 };

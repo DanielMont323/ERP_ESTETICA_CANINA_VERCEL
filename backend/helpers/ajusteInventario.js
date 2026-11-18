@@ -113,4 +113,82 @@ async function ajustarInventario({ productoId, tipo, cantidad, motivo, notas, co
   return { movimiento: mov, stockAntes, stockDespues: producto.stock, costo: totalCost, costSource };
 }
 
-module.exports = { ajustarInventario, MOTIVOS_SALIDA, MOTIVOS_ENTRADA };
+/**
+ * Anula un ajuste SIN borrar nada: registra el movimiento inverso con originalMovement apuntando al
+ * original y reversalReason 'error_correccion' (mismo esquema que la reversión de ventas).
+ *  - Ajuste de salida → regresa las piezas a las MISMAS capas de las que salieron (mismo costo).
+ *  - Ajuste de entrada → retira las piezas de la capa que creó; si parte ya se vendió, el resto sale
+ *    de las capas más antiguas (FIFO). Si ya no hay stock suficiente, no se puede anular (409).
+ * Un ajuste anulado, o una anulación, no se pueden volver a anular.
+ */
+async function anularAjuste({ movimientoId, userId, nota }, session) {
+  const orig = await InventoryMovement.findById(movimientoId).session(session);
+  if (!orig || orig.source !== 'ajuste' || !['ajuste_entrada', 'ajuste_salida'].includes(orig.type)) {
+    throw errorAjuste('Ajuste no encontrado', 404);
+  }
+  if (orig.originalMovement) throw errorAjuste('Esto es la anulación de otro ajuste; no se puede modificar');
+  const yaAnulado = await InventoryMovement.findOne({ originalMovement: orig._id }).session(session);
+  if (yaAnulado) throw errorAjuste('Este ajuste ya fue anulado', 409);
+
+  const producto = await Producto.findById(orig.producto).session(session);
+  if (!producto) throw errorAjuste('Producto no encontrado', 404);
+  const cantidad = Math.abs(orig.quantity);
+  const stockAntes = producto.stock;
+  const base = {
+    producto: producto._id, source: 'ajuste', adjustmentReason: orig.adjustmentReason,
+    originalMovement: orig._id, reversalReason: 'error_correccion',
+    date: getCurrentDateGMT7(), user: userId, movementId: uuidv4(), stockAntes,
+    notes: nota || 'Anulación de ajuste'
+  };
+
+  if (orig.type === 'ajuste_salida') {
+    const restaurados = [];
+    for (const c of orig.layersConsumed || []) {
+      const capa = await InventoryLayer.findById(c.layer).session(session);
+      if (!capa) throw errorAjuste('No se encontró una capa de inventario del ajuste; no se puede anular', 409);
+      const nuevo = capa.remainingQuantity + c.quantityConsumed;
+      if (nuevo > capa.initialQuantity + EPS) throw errorAjuste('Las capas del ajuste no cuadran; no se puede anular', 409);
+      capa.remainingQuantity = nuevo;
+      if (capa.isExhausted && nuevo > 0) { capa.isExhausted = false; capa.exhaustedDate = null; }
+      await capa.save({ session });
+      restaurados.push({ layer: c.layer, quantityConsumed: c.quantityConsumed, unitCost: c.unitCost, cost: c.cost });
+    }
+    const totalCost = r2(restaurados.reduce((s, c) => s + c.cost, 0));
+    const [mov] = await InventoryMovement.create([{
+      ...base, type: 'ajuste_entrada', quantity: cantidad, unitCost: totalCost / cantidad, totalCost, layersConsumed: restaurados
+    }], { session });
+    producto.stock += cantidad;
+    await producto.save({ session });
+    return { movimiento: mov, stockAntes, stockDespues: producto.stock };
+  }
+
+  // Anular una entrada: sacar las piezas
+  if (cantidad > producto.stock + EPS) {
+    throw errorAjuste(`No se puede anular: ya no hay ${cantidad} piezas de "${producto.name}" en existencia (hay ${producto.stock}). Registra un ajuste de salida por lo que quede.`, 409);
+  }
+  const propia = orig.sourceId ? await InventoryLayer.findById(orig.sourceId).session(session) : null;
+  const otras = await InventoryLayer.find({ producto: producto._id, isActive: true, remainingQuantity: { $gt: 0 }, _id: { $ne: propia?._id } })
+    .sort({ receivedDate: 1, _id: 1 }).session(session);
+  const capas = [...(propia && propia.remainingQuantity > 0 ? [propia] : []), ...otras];
+  let porSacar = cantidad;
+  const consumidas = [];
+  for (const capa of capas) {
+    if (porSacar <= EPS) break;
+    const q = Math.min(porSacar, capa.remainingQuantity);
+    capa.remainingQuantity -= q;
+    if (capa.remainingQuantity <= EPS) { capa.remainingQuantity = 0; capa.isExhausted = true; capa.exhaustedDate = new Date(); }
+    await capa.save({ session });
+    consumidas.push({ layer: capa._id, quantityConsumed: q, unitCost: capa.unitCost, cost: q * capa.unitCost });
+    porSacar -= q;
+  }
+  if (porSacar > EPS) throw errorAjuste(`El inventario de "${producto.name}" no cuadra; no se puede anular`, 409);
+  const totalCost = r2(consumidas.reduce((s, c) => s + c.cost, 0));
+  const [mov] = await InventoryMovement.create([{
+    ...base, type: 'ajuste_salida', quantity: -cantidad, unitCost: totalCost / cantidad, totalCost, layersConsumed: consumidas
+  }], { session });
+  producto.stock -= cantidad;
+  await producto.save({ session });
+  return { movimiento: mov, stockAntes, stockDespues: producto.stock };
+}
+
+module.exports = { ajustarInventario, anularAjuste, MOTIVOS_SALIDA, MOTIVOS_ENTRADA };

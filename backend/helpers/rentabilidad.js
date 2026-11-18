@@ -185,9 +185,13 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
   const utilidadBruta = t.ingresoNeto - costoVentas;
   // Ajustes manuales de inventario del periodo: mermas/faltantes (salidas) menos sobrantes (entradas),
   // valuados al costo FIFO de las capas. Una merma es mercancía que se pagó y no se vendió.
-  const ajustes = await InventoryMovement.find({
-    ...filtroFecha, source: 'ajuste', type: { $in: ['ajuste_entrada', 'ajuste_salida'] }
+  // Los ajustes anulados (por error) y sus anulaciones no cuentan: se excluyen ambos, aunque caigan en meses distintos.
+  const ajustesPeriodo = await InventoryMovement.find({
+    ...filtroFecha, source: 'ajuste', type: { $in: ['ajuste_entrada', 'ajuste_salida'] }, originalMovement: null
   }).select('type totalCost').lean();
+  const anuladosAjuste = new Set((await InventoryMovement.find({ originalMovement: { $in: ajustesPeriodo.map(a => a._id) }, source: 'ajuste' })
+    .select('originalMovement').lean()).map(a => String(a.originalMovement)));
+  const ajustes = ajustesPeriodo.filter(a => !anuladosAjuste.has(String(a._id)));
   const mermas = ajustes.filter(a => a.type === 'ajuste_salida').reduce((s, a) => s + (a.totalCost || 0), 0);
   const sobrantes = ajustes.filter(a => a.type === 'ajuste_entrada').reduce((s, a) => s + (a.totalCost || 0), 0);
   const ajusteNeto = mermas - sobrantes;
