@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../services/api';
+import { intervaloMin, guardarIntervaloMin, OPCIONES_INTERVALO, desbloquearSonido, reproducirAlerta } from '../helpers/alertasRecordatorios';
 import toast from 'react-hot-toast';
 import {
   Users,
@@ -103,6 +104,34 @@ const UsuariosAdmin = () => {
           {guardando ? 'Creando...' : 'Crear usuario'}
         </button>
       </form>
+    </div>
+  );
+};
+
+// Alerta sonora de los recordatorios del día. Se guarda en este navegador (cada equipo elige el suyo).
+const AlertaSonora = () => {
+  const [min, setMin] = useState(intervaloMin());
+  const cambiar = (v) => { const n = Number(v); setMin(n); guardarIntervaloMin(n); toast.success(n ? `Alerta cada ${n} minutos` : 'Alertas sonoras desactivadas'); };
+  const probar = async () => {
+    if (await desbloquearSonido() && reproducirAlerta()) return;
+    toast.error('No se pudo reproducir el sonido. Revisa el volumen o los permisos del navegador.');
+  };
+  return (
+    <div className="rounded-lg border border-gray-200 dark:border-dark-border p-4 space-y-3">
+      <div>
+        <p className="font-medium text-gray-700 dark:text-dark-text">Alerta sonora de recordatorios de hoy</p>
+        <p className="text-sm text-gray-500 dark:text-dark-textSecondary">
+          Mientras la aplicación esté abierta, suena y muestra un aviso cuando hay recordatorios para hoy sin completar, y se repite hasta que se completen.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="text-sm text-gray-700 dark:text-dark-textSecondary" htmlFor="intervalo-alerta">Repetir cada</label>
+        <select id="intervalo-alerta" value={min} onChange={e => cambiar(e.target.value)} className="form-input w-44">
+          {OPCIONES_INTERVALO.map(o => <option key={o} value={o}>{o} minutos</option>)}
+          <option value={0}>Desactivada</option>
+        </select>
+        <button type="button" onClick={probar} className="btn btn-secondary btn-md">Probar sonido</button>
+      </div>
     </div>
   );
 };
@@ -235,6 +264,8 @@ const Settings = () => {
               {activeTab === 'notifications' && (
                 <div className="space-y-6">
                   <h3 className="text-lg font-medium text-gray-700 dark:text-dark-textSecondary dark:text-dark-text">Preferencias de Notificación</h3>
+
+                  <AlertaSonora />
                   
                   <div className="space-y-4">
                     <label className="flex items-center justify-between">

@@ -38,6 +38,19 @@ const vacunaSchema = new mongoose.Schema({
   replacedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'CarnetVacunacion'
+  },
+  // --- Campos agregados 2026-11 (opcionales) para el recordatorio de la PRÓXIMA dosis ---
+  // Recordatorio atendido (se completó desde Recordatorios)
+  atendido: {
+    fecha: { type: Date },
+    usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
+    nombre: { type: String, trim: true }
+  },
+  // Se avisó al dueño que la próxima dosis está pendiente. NO significa que se aplicó.
+  duenoNotificado: {
+    fecha: { type: Date },
+    usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
+    nombre: { type: String, trim: true }
   }
 });
 

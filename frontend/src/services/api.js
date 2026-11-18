@@ -265,6 +265,12 @@ export const remindersAPI = {
   getOverdue: () => api.get('/recordatorios/overdue'),
   getCalendar: (year, month) => api.get(`/recordatorios/calendar/${year}/${month}`),
   getDashboard: () => api.get('/recordatorios/dashboard'),
+  // Bandeja unificada (manuales + próximas dosis del carnet) con estado calculado
+  getBandeja: (vista = 'pendientes') => api.get('/recordatorios/bandeja', { params: { vista } }),
+  notificarDueno: (id) => api.patch(`/recordatorios/${id}/notificar-dueno`),
+  getDetallePago: (id) => api.get(`/recordatorios/${id}/detalle-pago`),
+  atenderCarnet: (carnetId, aplicacionId) => api.patch(`/recordatorios/carnet/${carnetId}/${aplicacionId}/atender`),
+  notificarDuenoCarnet: (carnetId, aplicacionId) => api.patch(`/recordatorios/carnet/${carnetId}/${aplicacionId}/notificar-dueno`),
 };
 
 // Inventario (ajustes manuales)

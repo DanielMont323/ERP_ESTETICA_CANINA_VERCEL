@@ -47,6 +47,24 @@ const recordatorioSchema = new mongoose.Schema({
   completedAt: {
     type: Date
   },
+  // --- Campos agregados 2026-11 (opcionales; los recordatorios anteriores no los tienen) ---
+  // Quién lo completó y por qué: 'manual' (botón) o automático al pagar/cancelar la cuenta ligada
+  completadoPor: {
+    usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
+    nombre: { type: String, trim: true },
+    motivo: { type: String, enum: ['manual', 'cuenta_pagada', 'cuenta_cancelada'] }
+  },
+  // Aviso al dueño de la mascota (vacunas/desparasitantes). NO completa el recordatorio.
+  duenoNotificado: {
+    fecha: { type: Date },
+    usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
+    nombre: { type: String, trim: true }
+  },
+  // Cuenta por pagar a la que pertenece un recordatorio de pago (al liquidarse se completa sola)
+  cuentaPorPagar: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CuentaPorPagar'
+  },
   createdAt: {
     type: Date,
     default: getCurrentDateGMT7
@@ -54,9 +72,10 @@ const recordatorioSchema = new mongoose.Schema({
 });
 
 // Marcar como completado
-recordatorioSchema.methods.complete = function() {
+recordatorioSchema.methods.complete = function(usuario) {
   this.status = 'completado';
   this.completedAt = new Date();
+  if (usuario) this.completadoPor = { usuario: usuario._id, nombre: usuario.name, motivo: 'manual' };
   return this.save();
 };
 

@@ -253,4 +253,32 @@ cuentaPorPagarSchema.methods.checkDiscountAvailability = function() {
   };
 };
 
+// Recordatorios de pago ligados a esta cuenta (campo Recordatorio.cuentaPorPagar):
+// - al quedar pagada o cancelada, sus recordatorios pendientes se completan solos;
+// - si se reactiva, se reabren SOLO los que se completaron automáticamente por esta cuenta.
+// Todos los caminos de pago (abono, pago masivo, cambio de estado, cancelación, edición de compra)
+// terminan en cuenta.save(), por eso basta este gancho.
+cuentaPorPagarSchema.post('save', async function(doc) {
+  const Recordatorio = require('./Recordatorio');
+  const session = doc.$session() || undefined;
+  const liquidada = doc.status === 'pagado' || doc.status === 'cancelada';
+  if (liquidada) {
+    await Recordatorio.updateMany(
+      { cuentaPorPagar: doc._id, status: 'pendiente' },
+      { $set: {
+        status: 'completado',
+        completedAt: new Date(),
+        completadoPor: { motivo: doc.status === 'pagado' ? 'cuenta_pagada' : 'cuenta_cancelada' }
+      } },
+      { session }
+    );
+  } else if (doc.saldo > 0) {
+    await Recordatorio.updateMany(
+      { cuentaPorPagar: doc._id, status: 'completado', 'completadoPor.motivo': { $in: ['cuenta_pagada', 'cuenta_cancelada'] } },
+      { $set: { status: 'pendiente' }, $unset: { completedAt: 1, completadoPor: 1 } },
+      { session }
+    );
+  }
+});
+
 module.exports = mongoose.model('CuentaPorPagar', cuentaPorPagarSchema);

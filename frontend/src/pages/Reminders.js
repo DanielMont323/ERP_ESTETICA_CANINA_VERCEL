@@ -1,33 +1,175 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { remindersAPI } from '../services/api';
-import { hoyTepicISO } from '../helpers/dateUtils';
+import { hoyTepicISO, formatCalendarDate } from '../helpers/dateUtils';
+import { estadoActual, avisarCambioRecordatorios } from '../helpers/alertasRecordatorios';
+import { etiqueta } from '../helpers/etiquetas';
 import toast from 'react-hot-toast';
 import { alDobleClic, TITULO_DOBLE_CLIC } from '../helpers/dobleClic';
 import { Skeleton, SkeletonCard } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
-import Pagination from '../components/Pagination';
+import DetallePagoModal from '../components/DetallePagoModal';
 import {
   Plus,
   Calendar,
   CheckCircle,
-  AlertTriangle,
   Edit,
   Trash2,
-  Search
+  Search,
+  UserCheck,
+  Receipt
 } from 'lucide-react';
 
+// Para reutilizar el formulario de edición de siempre con un elemento de la bandeja
+const aFormulario = (i) => ({ _id: i.recordatorioId, title: i.titulo, description: i.descripcion, type: i.tipo, priority: i.prioridad, date: i.fecha, status: i.status });
+
+const ESTILO_ESTADO = {
+  retrasado: { texto: 'Retrasado', badge: 'badge-danger', borde: 'border-l-4 border-l-danger-500' },
+  hoy: { texto: 'Hoy', badge: 'badge-warning', borde: 'border-l-4 border-l-warning-500' },
+  pendiente: { texto: 'Pendiente', badge: 'badge-info', borde: 'border-l-4 border-l-transparent' },
+  completado: { texto: 'Completado', badge: 'badge-gray', borde: 'border-l-4 border-l-transparent opacity-80' }
+};
+const TIPOS = [
+  { id: 'todos', texto: 'Todos los tipos' },
+  { id: 'pago', texto: 'Pagos' },
+  { id: 'vacunas', texto: 'Vacunas y desparasitantes' },
+  { id: 'otros', texto: 'Otros' }
+];
+const VISTAS = [
+  { id: 'pendientes', texto: 'Pendientes' },
+  { id: 'completados', texto: 'Completados' },
+  { id: 'todos', texto: 'Todos' }
+];
+// completedAt y los avisos se guardan como instante real → se muestran en hora de Tepic
+const fechaHora = (f) => (f ? new Date(f).toLocaleString('es-MX', {
+  timeZone: 'America/Mazatlan', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+}) : '');
+const textoCompletado = (c) => {
+  if (!c) return '';
+  if (c.motivo === 'siguiente_dosis_aplicada') return `Se aplicó la siguiente dosis el ${formatCalendarDate(c.fecha)}`;
+  if (c.motivo === 'cuenta_pagada') return `Se completó solo al pagar la cuenta${c.fecha ? ` · ${fechaHora(c.fecha)}` : ''}`;
+  if (c.motivo === 'cuenta_cancelada') return `Se completó solo al cancelar la cuenta${c.fecha ? ` · ${fechaHora(c.fecha)}` : ''}`;
+  return `Completado${c.fecha ? ` el ${fechaHora(c.fecha)}` : ''}${c.nombre ? ` por ${c.nombre}` : ''}`;
+};
+
+const Bandeja = ({ items, conteo, vista, setVista, filtroTipo, setFiltroTipo, hoy, onCompletar, onNotificar, onEditar, onVerPago, onEliminar, ocupado }) => (
+  <div className="space-y-4">
+    <div className="flex flex-col md:flex-row md:items-center gap-3">
+      <div className="inline-flex rounded-lg border border-gray-200 dark:border-dark-border overflow-hidden" role="tablist" aria-label="Ver recordatorios">
+        {VISTAS.map(v => (
+          <button
+            key={v.id}
+            role="tab"
+            aria-selected={vista === v.id}
+            onClick={() => setVista(v.id)}
+            className={`px-3 py-1.5 text-sm font-medium ${vista === v.id ? 'bg-brand-burgundy text-white' : 'bg-white dark:bg-dark-card text-gray-700 dark:text-dark-textSecondary hover:bg-gray-50'}`}
+          >
+            {v.texto}
+          </button>
+        ))}
+      </div>
+      <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} className="form-input md:w-60" aria-label="Tipo de recordatorio">
+        {TIPOS.map(t => <option key={t.id} value={t.id}>{t.texto}</option>)}
+      </select>
+      {vista !== 'completados' && (
+        <p className="text-sm text-gray-600 dark:text-dark-textSecondary md:ml-auto">
+          <span className="text-danger-600 font-semibold">{conteo.retrasado} retrasados</span>
+          {' · '}<span className="text-warning-700 font-semibold">{conteo.hoy} para hoy</span>
+          {' · '}{conteo.pendiente} próximos
+        </p>
+      )}
+    </div>
+
+    {items.length === 0 ? (
+      <div className="text-center py-10 text-gray-500 dark:text-dark-textSecondary">
+        {vista === 'completados' ? 'No hay recordatorios completados' : 'No hay recordatorios pendientes 🎉'}
+      </div>
+    ) : (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {items.map(item => {
+          const estado = estadoActual(item, hoy);
+          const e = ESTILO_ESTADO[estado];
+          const manual = item.origen === 'manual';
+          const pendiente = estado !== 'completado';
+          return (
+            <div
+              key={item.id}
+              className={`card ${e.borde} ${manual ? 'cursor-pointer' : ''}`}
+              onDoubleClick={manual ? alDobleClic(() => (item.tipo === 'pago' ? onVerPago(item) : onEditar(item.original))) : undefined}
+              title={manual ? (item.tipo === 'pago' ? 'Doble clic para ver la compra y la cuenta por pagar' : TITULO_DOBLE_CLIC) : undefined}
+              data-estado={estado}
+            >
+              <div className="card-body space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="text-base font-medium text-gray-800 dark:text-dark-text">{item.titulo}</h3>
+                  <span className={`badge ${e.badge} shrink-0`}>{e.texto}</span>
+                </div>
+                {item.descripcion && <p className="text-sm text-gray-600 dark:text-dark-textSecondary">{item.descripcion}</p>}
+                {item.dueno?.telefono && pendiente && (
+                  <p className="text-sm text-gray-600 dark:text-dark-textSecondary">Tel. dueño: <a className="text-brand-burgundy" href={`tel:${item.dueno.telefono}`}>{item.dueno.telefono}</a></p>
+                )}
+                <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-dark-textSecondary">
+                  <span className="inline-flex items-center">
+                    <Calendar className="h-4 w-4 mr-1" />
+                    {item.origen === 'carnet' ? 'Próxima dosis: ' : ''}{formatCalendarDate(item.fecha)}
+                  </span>
+                  <span className="badge badge-gray">{etiqueta(item.tipo)}</span>
+                  {manual && item.prioridad && <span className="badge badge-gray">Prioridad {item.prioridad}</span>}
+                </div>
+                {item.duenoNotificado && (
+                  <p className="text-xs inline-flex items-center gap-1 text-success-700 bg-success-50 rounded px-2 py-1">
+                    <UserCheck className="h-3.5 w-3.5" />
+                    Dueño notificado el {fechaHora(item.duenoNotificado.fecha)}{item.duenoNotificado.nombre ? ` por ${item.duenoNotificado.nombre}` : ''}
+                  </p>
+                )}
+                {!pendiente && <p className="text-xs text-gray-500 dark:text-dark-textSecondary">{textoCompletado(item.completado)}</p>}
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {pendiente && (
+                    <button onClick={() => onCompletar(item)} disabled={ocupado === item.id} className="btn btn-sm btn-success inline-flex items-center gap-1">
+                      <CheckCircle className="h-4 w-4" /> Completar
+                    </button>
+                  )}
+                  {pendiente && item.puedeNotificarDueno && !item.duenoNotificado && (
+                    <button onClick={() => onNotificar(item)} disabled={ocupado === item.id} className="btn btn-sm btn-secondary inline-flex items-center gap-1" title="Registra que ya se le avisó al dueño. El recordatorio sigue pendiente.">
+                      <UserCheck className="h-4 w-4" /> Dueño notificado
+                    </button>
+                  )}
+                  {manual && (
+                    <span className="ml-auto flex items-center gap-2">
+                      {item.tipo === 'pago' && (
+                        <button onClick={() => onVerPago(item)} className="text-gray-600 hover:text-gray-900" title="Ver compra y cuenta por pagar" aria-label="Ver compra y cuenta por pagar">
+                          <Receipt className="h-4 w-4" />
+                        </button>
+                      )}
+                      <button onClick={() => onEditar(item.original)} className="text-brand-burgundy hover:text-primary-900" title="Editar" aria-label="Editar">
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button onClick={() => onEliminar(item.recordatorioId)} className="text-danger-600 hover:text-danger-900" title="Eliminar" aria-label="Eliminar">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </div>
+);
+
 const Reminders = () => {
-  const [reminders, setReminders] = useState([]);
+  const [bandeja, setBandeja] = useState({ items: [], conteo: { retrasado: 0, hoy: 0, pendiente: 0, completado: 0 } });
+  const [vista, setVista] = useState('pendientes');
+  const [filtroTipo, setFiltroTipo] = useState('todos');
+  const [ocupado, setOcupado] = useState(null);
+  const [detallePago, setDetallePago] = useState(null);
+  const [hoy, setHoy] = useState(hoyTepicISO());
   const [automaticReminders, setAutomaticReminders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAutomatic, setShowAutomatic] = useState(false);
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 10,
-    total: 0,
-    pages: 0
-  });
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteReminderId, setDeleteReminderId] = useState(null);
@@ -41,26 +183,68 @@ const Reminders = () => {
     status: 'pendiente'
   });
 
-  useEffect(() => {
-    fetchReminders();
-    fetchAutomaticReminders();
-  }, [pagination.page, pagination.limit]);
-
-  const fetchReminders = async () => {
+  const fetchReminders = useCallback(async () => {
     try {
-      const params = {
-        page: pagination.page,
-        limit: pagination.limit
-      };
-      const response = await remindersAPI.getAll(params);
-      setReminders(response.data.data);
-      setPagination(response.data.pagination || pagination);
+      const response = await remindersAPI.getBandeja(vista);
+      setBandeja(response.data.data);
     } catch (error) {
       toast.error('Error al cargar recordatorios');
     } finally {
       setLoading(false);
     }
+  }, [vista]);
+
+  useEffect(() => { fetchReminders(); }, [fetchReminders]);
+  useEffect(() => { fetchAutomaticReminders(); }, []);
+
+  // A medianoche (Tepic) los de ayer pasan a "Retrasado" sin recargar
+  useEffect(() => {
+    const t = setInterval(() => setHoy(hoyTepicISO()), 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  const refrescar = () => { fetchReminders(); avisarCambioRecordatorios(); };
+
+  const completar = async (item) => {
+    setOcupado(item.id);
+    try {
+      if (item.origen === 'carnet') await remindersAPI.atenderCarnet(item.carnetId, item.aplicacionId);
+      else await remindersAPI.complete(item.recordatorioId);
+      toast.success(vista === 'pendientes' ? 'Completado. Lo encuentras en "Completados".' : 'Recordatorio completado');
+      refrescar();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Error al completar recordatorio');
+      refrescar();
+    } finally {
+      setOcupado(null);
+    }
   };
+
+  const notificar = async (item) => {
+    setOcupado(item.id);
+    try {
+      if (item.origen === 'carnet') await remindersAPI.notificarDuenoCarnet(item.carnetId, item.aplicacionId);
+      else await remindersAPI.notificarDueno(item.recordatorioId);
+      toast.success('Aviso al dueño registrado. El recordatorio sigue pendiente.');
+      refrescar();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Error al registrar el aviso');
+      refrescar();
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  const texto = searchTerm.trim().toLowerCase();
+  const bandejaFiltrada = (bandeja.items || [])
+    .filter(i => filtroTipo === 'todos'
+      || (filtroTipo === 'pago' && i.tipo === 'pago')
+      || (filtroTipo === 'vacunas' && (i.tipo === 'vacuna' || i.tipo === 'desparasitante'))
+      || (filtroTipo === 'otros' && !['pago', 'vacuna', 'desparasitante'].includes(i.tipo)))
+    .filter(i => !texto || i.titulo?.toLowerCase().includes(texto) || i.descripcion?.toLowerCase().includes(texto))
+    .map(i => (i.origen === 'manual' ? { ...i, original: aFormulario(i) } : i));
+  const conteoVista = { retrasado: 0, hoy: 0, pendiente: 0, completado: 0 };
+  bandejaFiltrada.forEach(i => { conteoVista[estadoActual(i, hoy)] += 1; });
 
   const fetchAutomaticReminders = async () => {
     try {
@@ -68,19 +252,6 @@ const Reminders = () => {
       setAutomaticReminders(response.data.data);
     } catch (error) {
       console.error('Error al cargar recordatorios automáticos:', error);
-    }
-  };
-
-  const isOverdue = (date) => {
-    return new Date(date) < new Date();
-  };
-
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'alta': return 'danger';
-      case 'media': return 'warning';
-      case 'baja': return 'success';
-      default: return 'info';
     }
   };
 
@@ -119,19 +290,9 @@ const Reminders = () => {
     try {
       await remindersAPI.delete(deleteReminderId);
       toast.success('Recordatorio eliminado correctamente');
-      fetchReminders();
+      refrescar();
     } catch (error) {
       toast.error('Error al eliminar recordatorio');
-    }
-  };
-
-  const handleCompleteReminder = async (reminderId) => {
-    try {
-      await remindersAPI.complete(reminderId);
-      toast.success('Recordatorio completado correctamente');
-      fetchReminders();
-    } catch (error) {
-      toast.error('Error al completar recordatorio');
     }
   };
 
@@ -156,7 +317,7 @@ const Reminders = () => {
         toast.success('Recordatorio creado correctamente');
       }
       setShowModal(false);
-      fetchReminders();
+      refrescar();
     } catch (error) {
       toast.error('Error al guardar recordatorio');
     }
@@ -269,75 +430,7 @@ const Reminders = () => {
       )}
 
       {/* Manual Reminders */}
-      {!showAutomatic && (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {reminders.filter(reminder =>
-              reminder.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              reminder.description?.toLowerCase().includes(searchTerm.toLowerCase())
-            ).map((reminder) => (
-              <div key={reminder._id} className="card cursor-pointer" onDoubleClick={alDobleClic(() => handleEditReminder(reminder))} title={TITULO_DOBLE_CLIC}>
-                <div className="card-body">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-medium text-gray-700 dark:text-dark-textSecondary dark:text-dark-text">{reminder.title}</h3>
-                      {reminder.description && (
-                        <p className="mt-1 text-sm text-gray-600 dark:text-dark-textSecondary">{reminder.description}</p>
-                      )}
-                      <div className="mt-3 space-y-2">
-                        <div className="flex items-center text-sm text-gray-600 dark:text-dark-textSecondary">
-                          <Calendar className="h-4 w-4 mr-2" />
-                          {new Date(reminder.date).toLocaleDateString('es-MX', { timeZone: 'UTC' })}
-                          {isOverdue(reminder.date) && (
-                            <AlertTriangle className="h-4 w-4 ml-2 text-danger-600" />
-                          )}
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="capitalize badge badge-info">
-                            {reminder.type}
-                          </span>
-                          <span className={`capitalize badge badge-${getPriorityColor(reminder.priority)}`}>
-                            {reminder.priority}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    {reminder.status === 'pendiente' && (
-                      <button 
-                        onClick={() => handleCompleteReminder(reminder._id)}
-                        className="text-success-600 hover:text-success-900"
-                        title="Marcar como completado"
-                      >
-                        <CheckCircle className="h-4 w-4" />
-                      </button>
-                    )}
-                    <button 
-                      onClick={() => handleEditReminder(reminder)}
-                      className="text-brand-burgundy hover:text-primary-900"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <button 
-                      onClick={() => handleDeleteReminder(reminder._id)}
-                      className="text-danger-600 hover:text-danger-900"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          
-          <Pagination
-            pagination={pagination}
-            onPageChange={(page) => setPagination({ ...pagination, page })}
-            onLimitChange={(limit) => setPagination({ ...pagination, limit, page: 1 })}
-          />
-        </>
-      )}
+      {!showAutomatic && <Bandeja items={bandejaFiltrada} conteo={conteoVista} vista={vista} setVista={setVista} filtroTipo={filtroTipo} setFiltroTipo={setFiltroTipo} hoy={hoy} onCompletar={completar} onNotificar={notificar} onEditar={handleEditReminder} onVerPago={setDetallePago} onEliminar={handleDeleteReminder} ocupado={ocupado} />}
 
       {/* Modal */}
       {showModal && (
@@ -426,6 +519,13 @@ const Reminders = () => {
             </div>
           </div>
         </div>
+      )}
+      {detallePago && (
+        <DetallePagoModal
+          recordatorio={detallePago}
+          onClose={() => setDetallePago(null)}
+          onEditar={() => { const r = detallePago.original; setDetallePago(null); handleEditReminder(r); }}
+        />
       )}
       {/* Delete Confirmation Modal */}
       <ConfirmModal

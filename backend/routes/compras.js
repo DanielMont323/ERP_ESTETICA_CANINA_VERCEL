@@ -519,13 +519,14 @@ router.post('/', authenticateToken, async (req, res) => {
 
         // Verificar si ya existe una cuenta por pagar para esta compra
         const existingAccount = await CuentaPorPagar.findOne({ compra: compra[0]._id }).session(session);
+        let cuentaId = existingAccount ? existingAccount._id : null;
         if (existingAccount) {
           console.log(`Cuenta por pagar ya existe para compra ${compra[0]._id}, no se crea duplicado`);
         } else {
           // Calcular el saldo inicial basado en el importe exigible (con descuento si aplica)
           const saldoInicial = compra[0].totalDiscount > 0 ? compra[0].total : compra[0].baseTotal;
           
-          await CuentaPorPagar.create([{
+          const [cuentaNueva] = await CuentaPorPagar.create([{
             proveedor,
             compra: compra[0]._id,
             receiptNumber,
@@ -541,6 +542,7 @@ router.post('/', authenticateToken, async (req, res) => {
             dueDate,
             notes: `Cuenta generada por compra ${compra[0]._id}`
           }], { session });
+          cuentaId = cuentaNueva._id;
           console.log(`Cuenta por pagar creada exitosamente para compra ${compra[0]._id}`);
         }
 
@@ -554,6 +556,7 @@ router.post('/', authenticateToken, async (req, res) => {
             priority: 'alta',
             relatedId: proveedor,
             relatedModel: 'Proveedor',
+            cuentaPorPagar: cuentaId || undefined, // se completa sola al liquidar la cuenta
             status: 'pendiente',
             user: user
           }], { session });

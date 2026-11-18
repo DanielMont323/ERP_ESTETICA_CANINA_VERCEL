@@ -5,6 +5,9 @@ const CarnetVacunacion = require('../models/CarnetVacunacion');
 const Mascota = require('../models/Mascota');
 const Producto = require('../models/Producto');
 const { getCurrentDateGMT7 } = require('../helpers/timezone');
+const mongoose = require('mongoose');
+const { construirBandeja, quien } = require('../helpers/recordatoriosBandeja');
+const { detallePago } = require('../helpers/recordatorioPago');
 const router = express.Router();
 
 // @route   GET /api/recordatorios
@@ -316,6 +319,97 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
+// @route   GET /api/recordatorios/bandeja?vista=pendientes|completados|todos
+// @desc    Recordatorios manuales + próximas dosis del carnet, con estado calculado
+//          (retrasado / hoy / pendiente / completado). Los retrasados NO se ocultan.
+router.get('/bandeja', async (req, res) => {
+  try {
+    const vista = ['pendientes', 'completados', 'todos'].includes(req.query.vista) ? req.query.vista : 'pendientes';
+    const data = await construirBandeja({ vista });
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Error al obtener recordatorios' });
+  }
+});
+
+// @route   PATCH /api/recordatorios/carnet/:carnetId/:aplicacionId/atender
+// @desc    Completar el recordatorio de próxima dosis de una aplicación del carnet.
+//          Solo escribe el campo "atendido" de ESA aplicación; no toca nada más del carnet.
+router.patch('/carnet/:carnetId/:aplicacionId/atender', async (req, res) => {
+  await marcarAplicacion(req, res, 'atendido', 'El recordatorio ya estaba completado', 'Recordatorio completado');
+});
+
+// @route   PATCH /api/recordatorios/carnet/:carnetId/:aplicacionId/notificar-dueno
+// @desc    Registrar que se avisó al dueño. NO completa el recordatorio.
+router.patch('/carnet/:carnetId/:aplicacionId/notificar-dueno', async (req, res) => {
+  await marcarAplicacion(req, res, 'duenoNotificado', 'Ya se había registrado el aviso al dueño', 'Aviso al dueño registrado');
+});
+
+async function marcarAplicacion(req, res, campo, msgYa, msgOk) {
+  try {
+    const { carnetId, aplicacionId } = req.params;
+    if (!mongoose.isValidObjectId(carnetId) || !mongoose.isValidObjectId(aplicacionId)) {
+      return res.status(400).json({ success: false, message: 'Identificador inválido' });
+    }
+    const carnet = await CarnetVacunacion.findOne({ _id: carnetId, 'vacunas._id': aplicacionId }).select('vacunas').lean();
+    if (!carnet) return res.status(404).json({ success: false, message: 'Aplicación no encontrada en el carnet' });
+    const ap = carnet.vacunas.find(v => String(v._id) === String(aplicacionId));
+    if (!ap.proximaDosis) return res.status(400).json({ success: false, message: 'Esta aplicación no tiene próxima dosis' });
+
+    const valor = { fecha: new Date(), ...quien(req.user) };
+    // Condición atómica: solo si aún no tiene el dato (evita dobles clics y no sobrescribe el historial)
+    const r = await CarnetVacunacion.updateOne(
+      { _id: carnetId },
+      { $set: { [`vacunas.$[a].${campo}`]: valor } },
+      { arrayFilters: [{ 'a._id': new mongoose.Types.ObjectId(aplicacionId), [`a.${campo}.fecha`]: { $exists: false } }] }
+    );
+    if (r.modifiedCount === 0) return res.status(409).json({ success: false, message: msgYa });
+    res.json({ success: true, data: valor, message: msgOk });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Error al actualizar el recordatorio' });
+  }
+}
+
+// @route   GET /api/recordatorios/:id/detalle-pago
+// @desc    Compra y cuenta por pagar de un recordatorio de pago (solo lectura)
+router.get('/:id/detalle-pago', async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Identificador inválido' });
+    const r = await Recordatorio.findById(req.params.id).lean();
+    if (!r) return res.status(404).json({ success: false, message: 'Recordatorio no encontrado' });
+    if (r.type !== 'pago') return res.status(400).json({ success: false, message: 'Solo los recordatorios de pago tienen compra ligada' });
+    res.json({ success: true, data: await detallePago(r) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Error al obtener el detalle del pago' });
+  }
+});
+
+// @route   PATCH /api/recordatorios/:id/notificar-dueno
+// @desc    Registrar que se avisó al dueño (recordatorios manuales de vacuna). NO lo completa.
+router.patch('/:id/notificar-dueno', async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Identificador inválido' });
+    const actual = await Recordatorio.findById(req.params.id).select('type').lean();
+    if (!actual) return res.status(404).json({ success: false, message: 'Recordatorio no encontrado' });
+    if (actual.type !== 'vacuna') {
+      return res.status(400).json({ success: false, message: 'El aviso al dueño solo aplica a vacunas y desparasitantes' });
+    }
+    const valor = { fecha: new Date(), ...quien(req.user) };
+    const r = await Recordatorio.updateOne(
+      { _id: req.params.id, 'duenoNotificado.fecha': { $exists: false } },
+      { $set: { duenoNotificado: valor } }
+    );
+    if (r.modifiedCount === 0) return res.status(409).json({ success: false, message: 'Ya se había registrado el aviso al dueño' });
+    res.json({ success: true, data: valor, message: 'Aviso al dueño registrado' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Error al registrar el aviso' });
+  }
+});
+
 // @route   GET /api/recordatorios/:id
 // @desc    Obtener recordatorio por ID
 router.get('/:id', async (req, res) => {
@@ -453,7 +547,7 @@ router.patch('/:id/complete', async (req, res) => {
       });
     }
 
-    await recordatorio.complete();
+    await recordatorio.complete(req.user);
     await recordatorio.populate('user', 'name');
 
     res.json({
@@ -676,13 +770,14 @@ router.get('/automatic/vaccines', async (req, res) => {
 // @desc    Obtener todos los recordatorios automáticos (cuentas y vacunas)
 router.get('/automatic/all', async (req, res) => {
   try {
-    const [cuentasResponse, vacunasResponse] = await Promise.all([
-      fetch(`${req.protocol}://${req.get('host')}/api/recordatorios/automatic/accounts`),
-      fetch(`${req.protocol}://${req.get('host')}/api/recordatorios/automatic/vaccines`)
-    ]);
-    
-    const cuentas = await cuentasResponse.json();
-    const vacunas = await vacunasResponse.json();
+    // Antes se llamaba a sí mismo por HTTP SIN la sesión del usuario: siempre recibía 401 y la
+    // vista "Ver Automáticos" salía vacía. Ahora ejecuta los dos manejadores dentro del proceso.
+    const ejecutar = (ruta) => new Promise((resolve, reject) => {
+      const capa = router.stack.find(l => l.route && l.route.path === ruta && l.route.methods.get);
+      const resFalso = { status() { return resFalso; }, json: resolve };
+      Promise.resolve(capa.route.stack[0].handle(req, resFalso, reject)).catch(reject);
+    });
+    const [cuentas, vacunas] = await Promise.all([ejecutar('/automatic/accounts'), ejecutar('/automatic/vaccines')]);
     
     const allReminders = [
       ...(cuentas.success ? cuentas.data : []),
