@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
+import { useSearchParams } from 'react-router-dom';
 import { inventoryAPI, productsAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import Autocomplete from '../components/Autocomplete';
@@ -29,6 +30,8 @@ const formatFecha = d => {
 
 const InventoryAdjustments = () => {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const productoDeLaUrl = searchParams.get('producto'); // viene del botón "Ajuste de inventario" en Productos
   const [producto, setProducto] = useState(null);
   const [opcion, setOpcion] = useState('conteo');
   const [cantidad, setCantidad] = useState('');
@@ -66,6 +69,12 @@ const InventoryAdjustments = () => {
       toast.error('No se pudo cargar el producto');
     }
   };
+
+  // Si se llegó desde Productos, el producto ya queda seleccionado
+  useEffect(() => {
+    if (productoDeLaUrl && user?.role === 'admin') seleccionarProducto(productoDeLaUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productoDeLaUrl, user?.role]);
 
   const op = OPCIONES.find(o => o.id === opcion);
   const stock = producto ? producto.stock : 0;

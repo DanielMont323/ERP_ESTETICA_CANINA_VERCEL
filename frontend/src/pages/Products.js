@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { productsAPI, productCategoriesAPI, suppliersAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import { alDobleClic, TITULO_DOBLE_CLIC } from '../helpers/dobleClic';
@@ -18,12 +19,16 @@ import {
   Package,
   AlertTriangle,
   EyeOff,
-  RotateCcw
+  RotateCcw,
+  ClipboardCheck
 } from 'lucide-react';
 
 const Products = () => {
   const { user } = useAuth();
   const userRole = user?.role || 'user';
+  const navigate = useNavigate();
+  // Abre Ajustes de inventario con este producto ya seleccionado (solo administradores)
+  const irAjuste = (product) => navigate(`/inventory-adjustments?producto=${product._id}`);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -465,12 +470,12 @@ const Products = () => {
     <table className="table table-fixed w-full">
       <thead className="sticky top-0 bg-gray-50 dark:bg-dark-surface z-10">
         <tr>
-          <th className="w-[31%]">Producto</th>
+          <th className="w-[28%]">Producto</th>
           <th className="w-[15%]">Categoría</th>
           <th className="w-[15%]">Stock</th>
           <th className="w-[15%] text-right">Precio</th>
           <th className="w-[16%]">Estado</th>
-          <th className="w-[8%] text-right"><span className="sr-only">Acciones</span></th>
+          <th className="w-[11%] text-right"><span className="sr-only">Acciones</span></th>
         </tr>
       </thead>
       <tbody>
@@ -542,6 +547,16 @@ const Products = () => {
                             >
                               <Edit className="h-4 w-4" />
                             </button>
+                            {userRole === 'admin' && (
+                              <button
+                                onClick={() => irAjuste(product)}
+                                className="p-1.5 rounded-md text-gray-500 hover:text-brand-burgundy hover:bg-gray-100 dark:hover:bg-dark-hover"
+                                title="Ajuste de inventario"
+                                aria-label="Ajuste de inventario"
+                              >
+                                <ClipboardCheck className="h-4 w-4" />
+                              </button>
+                            )}
                             {userRole === 'admin' && (
                               <button
                                 onClick={() => handleDelete(product._id)}
@@ -655,6 +670,15 @@ const Products = () => {
                           <Edit className="h-4 w-4 mr-2" />
                           Editar
                         </button>
+                        {userRole === 'admin' && (
+                          <button
+                            onClick={() => irAjuste(product)}
+                            className="flex-1 btn btn-secondary btn-md"
+                          >
+                            <ClipboardCheck className="h-4 w-4 mr-2" />
+                            Ajuste
+                          </button>
+                        )}
                         {userRole === 'admin' && (
                           <button
                             onClick={() => handleDelete(product._id)}
