@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useKeyboardFormNavigation } from '../hooks/useKeyboardFormNavigation';
-import { salesAPI, productsAPI, servicesAPI, customersAPI, petsAPI, authAPI } from '../services/api';
+import { salesAPI, productsAPI, servicesAPI, customersAPI, petsAPI, authAPI, remindersAPI } from '../services/api';
+import { useSearchParams } from 'react-router-dom';
+import { avisarCambioRecordatorios } from '../helpers/alertasRecordatorios';
 import { etiqueta } from '../helpers/etiquetas';
 import toast from 'react-hot-toast';
 import { alDobleClic } from '../helpers/dobleClic';
@@ -83,6 +85,12 @@ const Sales = () => {
   const formRef = useRef(null);
   const userRole = user?.role || 'user';
 
+  // Venta abierta desde Recordatorios ("Se va a cobrar ahora"): llega en la URL el cliente, la mascota,
+  // el producto de la dosis anterior y la aplicación del carnet cuyo recordatorio se cierra al cobrar.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [desdeRecordatorio, setDesdeRecordatorio] = useState(null);
+  const precargaPendiente = useRef(null);
+
   // Listener para evento personalizado de F5 contextual (nueva venta)
   useEffect(() => {
     const handleOpenNewSale = () => {
@@ -96,6 +104,72 @@ const Sales = () => {
     window.addEventListener('openNewSale', handleOpenNewSale);
     return () => window.removeEventListener('openNewSale', handleOpenNewSale);
   }, []);
+
+  useEffect(() => {
+    if (searchParams.get('desde') !== 'recordatorio') return;
+    const datos = {
+      cliente: searchParams.get('cliente'),
+      mascota: searchParams.get('mascota'),
+      producto: searchParams.get('producto'),
+      dias: searchParams.get('dias'),
+      carnetId: searchParams.get('carnet'),
+      aplicacionId: searchParams.get('aplicacion'),
+      titulo: searchParams.get('titulo')
+    };
+    setSearchParams({}, { replace: true }); // que al recargar no se vuelva a abrir
+    if (!datos.cliente) return;
+    (async () => {
+      try {
+        const c = (await customersAPI.getById(datos.cliente)).data.data;
+        precargaPendiente.current = datos;
+        setDesdeRecordatorio(datos);
+        setSelectedCustomer(c);
+        setShowModal(true);
+      } catch (e) {
+        toast.error('No se pudo cargar el cliente del recordatorio');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Cuando ya cargaron las mascotas del cliente: seleccionar la mascota y poner el producto en el carrito
+  useEffect(() => {
+    const d = precargaPendiente.current;
+    if (!d || !pets.some(p => p._id === d.mascota)) return;
+    precargaPendiente.current = null;
+    setSelectedPet(d.mascota);
+    if (!d.producto) {
+      toast('Agrega el producto de la dosis: no se encontró en el inventario', { icon: 'ℹ️' });
+      return;
+    }
+    productsAPI.getById(d.producto).then(r => {
+      const p = r.data.data;
+      if (!p || p.isActive === false) {
+        toast('El producto de la dosis anterior ya no está activo; agrégalo manualmente', { icon: 'ℹ️' });
+        return;
+      }
+      setCart(prev => [...prev, {
+        item: p._id,
+        type: 'producto',
+        quantity: 1,
+        unitPrice: Number(p.price),
+        name: p.name,
+        category: p.category,
+        nextDoseDate: '',
+        diasProximaDosis: d.dias || '',
+        mascota: '',
+        aplicaciones: [{ mascota: d.mascota, fechaAplicacion: new Date().toISOString() }],
+        discountType: 'ninguno',
+        discountValue: 0,
+        discountAmount: 0,
+        subtotalBeforeDiscount: Number(p.price),
+        subtotalAfterDiscount: Number(p.price)
+      }]);
+    }).catch(() => toast('No se encontró el producto de la dosis anterior; agrégalo manualmente', { icon: 'ℹ️' }));
+  }, [pets]);
+
+  // Si se cierra la venta sin cobrar, se olvida el recordatorio
+  useEffect(() => { if (!showModal) { setDesdeRecordatorio(null); precargaPendiente.current = null; } }, [showModal]);
 
   // Navegación por teclado en formulario
   useKeyboardFormNavigation(formRef, showModal);
@@ -1214,6 +1288,20 @@ const Sales = () => {
 
       await salesAPI.create(saleData);
       toast.success('Venta registrada correctamente');
+
+      // Venta abierta desde un recordatorio: si se cobró la dosis para esa mascota, cerrar el recordatorio
+      if (desdeRecordatorio?.carnetId && desdeRecordatorio?.aplicacionId) {
+        const seCobroLaDosis = cart.some(i => (i.aplicaciones || []).some(a => a?.mascota === desdeRecordatorio.mascota));
+        if (seCobroLaDosis) {
+          try {
+            await remindersAPI.atenderCarnet(desdeRecordatorio.carnetId, desdeRecordatorio.aplicacionId);
+            toast.success('Recordatorio de la dosis completado');
+          } catch (e) {
+            if (e.response?.status !== 409) toast.error('La venta se guardó, pero no se pudo cerrar el recordatorio');
+          }
+          avisarCambioRecordatorios();
+        }
+      }
       
       // Reset form
       setCart([]);
@@ -1778,7 +1866,14 @@ const Sales = () => {
             {/* Header Sticky */}
             <div className="sticky top-0 bg-white dark:bg-dark-card z-10 p-6 border-b border-gray-200 dark:border-dark-border rounded-t-xl">
               <div className="flex justify-between items-center">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text">Nueva Venta</h3>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-dark-text">Nueva Venta</h3>
+                  {desdeRecordatorio && (
+                    <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
+                      Desde el recordatorio: {desdeRecordatorio.titulo || 'próxima dosis'}. Al cobrarla, el recordatorio se cierra solo.
+                    </p>
+                  )}
+                </div>
                 <button onClick={() => setShowModal(false)} className="text-gray-400 dark:text-dark-textSecondary hover:text-gray-600 dark:text-dark-textSecondary transition-colors">
                   <X className="h-6 w-6" />
                 </button>

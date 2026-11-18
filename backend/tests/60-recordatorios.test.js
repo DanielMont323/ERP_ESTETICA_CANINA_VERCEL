@@ -158,6 +158,18 @@ describe('carnet: próxima dosis de vacunas y desparasitantes', () => {
     expect(p[0]).toMatchObject({ estado: 'pendiente', dia: new Date(dia(30)).toISOString().slice(0, 10) });
   });
 
+  test('si la dosis anterior se vendió como producto, el recordatorio trae ese producto para precargar la venta', async () => {
+    const vacuna = await h.producto({ name: 'Vacuna Rabia', category: 'Vacunas' });
+    await carnet([
+      { vacuna: vacuna._id, nombre: 'Vacuna Rabia', tipo: 'vacuna', fecha: dia(-365), proximaDosis: dia(0), diasProximaDosis: 365 },
+      { vacuna: 'Texto histórico', nombre: 'Texto histórico', tipo: 'vacuna', fecha: dia(-30), proximaDosis: dia(2) }
+    ]);
+    const items = (await bandeja()).body.data.items;
+    const rabia = items.find(i => i.titulo === 'Vacuna: Vacuna Rabia');
+    expect(rabia).toMatchObject({ productoId: String(vacuna._id), diasSugeridos: 365, dueno: { id: String(base.cliente._id) }, mascota: { id: String(base.mascota._id) } });
+    expect(items.find(i => i.titulo === 'Vacuna: Texto histórico').productoId).toBeNull();
+  });
+
   test('"Se aplicó aquí": fecha pasada permitida, futura no; sin próxima dosis no crea recordatorio', async () => {
     const c = await carnet([{ vacuna: 'Rabia', nombre: 'Rabia', tipo: 'vacuna', fecha: dia(-400), proximaDosis: dia(-35) }]);
     const url = `/api/recordatorios/carnet/${c._id}/${c.vacunas[0]._id}/aplicar`;

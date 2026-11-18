@@ -93,8 +93,22 @@ const CompletarDosisModal = ({ item, onClose, onListo }) => {
               <Opcion
                 icono={ShoppingCart}
                 titulo="Se va a cobrar ahora"
-                ayuda="Ir a Ventas. Al cobrarla se registra sola en el carnet, se descuenta del inventario y este recordatorio se cierra."
-                onClick={() => { onClose(); navigate('/sales'); }}
+                ayuda="Abre una venta nueva con el cliente y la mascota (y el producto, si se vendió antes). Al cobrarla se registra en el carnet, se descuenta del inventario y este recordatorio se cierra."
+                onClick={() => {
+                  onClose();
+                  if (!item.dueno?.id || !item.mascota?.id) { navigate('/sales'); return; }
+                  const q = new URLSearchParams({
+                    desde: 'recordatorio',
+                    cliente: item.dueno.id,
+                    mascota: item.mascota.id,
+                    carnet: item.carnetId,
+                    aplicacion: item.aplicacionId,
+                    titulo: item.titulo
+                  });
+                  if (item.productoId) q.set('producto', item.productoId);
+                  if (item.diasSugeridos) q.set('dias', String(item.diasSugeridos));
+                  navigate(`/sales?${q.toString()}`);
+                }}
               />
               <Opcion
                 icono={Syringe}

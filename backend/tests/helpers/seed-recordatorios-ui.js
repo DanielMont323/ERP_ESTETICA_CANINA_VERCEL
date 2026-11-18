@@ -39,11 +39,15 @@ const dia = (d, hora = '00:00:00') => new Date(new Date(`${hoyTepic()}T${hora}Z`
   const toby = await Mascota.create({ name: 'Toby', type: 'perro', breed: 'Mestizo', weight: 8, gender: 'macho', owner: ana._id });
   const luna = await Mascota.create({ name: 'Luna', type: 'gato', breed: 'Criollo', weight: 4, gender: 'hembra', owner: luis._id });
 
+  // Vacuna vendida antes como producto (así la venta de la siguiente dosis se precarga)
+  const vacunaRabia = await Producto.create({ name: 'Vacuna Rabia Demo', sku: 'DEMO-VR', cost: 90, price: 250, stock: 5, category: 'Vacunas' });
+  await InventoryLayer.create({ producto: vacunaRabia._id, quantity: 5, initialQuantity: 5, remainingQuantity: 5, unitCost: 90, totalCost: 450, costSource: 'costo_capturado', source: 'ajuste_entrada', isInitialLayer: false, receivedDate: dia(-20, '12:00:00'), notes: 'Datos de prueba' });
+  await Producto.updateOne({ _id: vacunaRabia._id }, { $set: { fifoInitialized: true } });
   await CarnetVacunacion.create({
     mascota: toby._id, nombreMascota: 'Toby', especie: 'perro', raza: 'Mestizo', propietario: ana._id, nombrePropietario: 'Ana Ficticia',
     vacunas: [
       { vacuna: 'Desparasitante Demo', nombre: 'Desparasitante Demo', tipo: 'desparasitante', fecha: dia(-35, '12:00:00'), proximaDosis: dia(-5, '12:00:00') },
-      { vacuna: 'Rabia Demo', nombre: 'Rabia Demo', tipo: 'vacuna', fecha: dia(-365, '12:00:00'), proximaDosis: dia(0, '12:00:00') }
+      { vacuna: vacunaRabia._id, nombre: 'Vacuna Rabia Demo', tipo: 'vacuna', fecha: dia(-365, '12:00:00'), proximaDosis: dia(0, '12:00:00'), diasProximaDosis: 365 }
     ]
   });
   await CarnetVacunacion.create({

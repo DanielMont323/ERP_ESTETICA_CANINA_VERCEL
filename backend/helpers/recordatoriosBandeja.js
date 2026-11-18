@@ -111,6 +111,9 @@ async function construirBandeja({ vista = 'pendientes', ahora = new Date() } = {
   const Vacuna = require('../models/Vacuna');
   const ids = [...new Set(carnets.flatMap(c => c.vacunas.map(v => v.vacuna)).filter(v => v && typeof v === 'object').map(String))];
   const catalogo = new Map((await Vacuna.find({ _id: { $in: ids } }).select('name').lean()).map(v => [String(v._id), v]));
+  // Las aplicaciones registradas desde Ventas guardan el _id del PRODUCTO: sirve para precargar la venta de la siguiente dosis
+  const Producto = require('../models/Producto');
+  const productos = new Set((await Producto.find({ _id: { $in: ids }, isDeleted: { $ne: true } }).select('_id').lean()).map(p => String(p._id)));
 
   const deCarnets = [];
   for (const c of carnets) {
@@ -118,6 +121,8 @@ async function construirBandeja({ vista = 'pendientes', ahora = new Date() } = {
     for (const ap of aplicaciones) {
       if (!ap.proximaDosis || ap.replacedBy) continue;
       const item = deCarnet(c, ap, siguienteAplicacion(aplicaciones, ap), ahora);
+      const original = c.vacunas.find(v => String(v._id) === String(ap._id))?.vacuna;
+      item.productoId = original && productos.has(String(original)) ? String(original) : null;
       if (vista === 'pendientes' && item.status !== 'pendiente') continue;
       if (vista === 'completados' && item.status !== 'completado') continue;
       deCarnets.push(item);

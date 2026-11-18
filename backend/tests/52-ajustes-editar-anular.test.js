@@ -23,7 +23,8 @@ async function productoConCapas() {
   await h.comprar(admin, { proveedor: base.proveedor, productoId: p._id, quantity: 5, unitCost: 60 });
   return p;
 }
-const capasDe = async (p) => (await InventoryLayer.find({ producto: p._id }).sort({ receivedDate: 1, _id: 1 }).lean()).map(c => c.remainingQuantity);
+// En orden de creación (no por fecha: la capa de un ajuste lleva la hora actual y la de una compra el mediodía del día)
+const capasDe = async (p) => (await InventoryLayer.find({ producto: p._id }).sort({ _id: 1 }).lean()).map(c => c.remainingQuantity);
 
 test('anular una merma regresa las piezas a las mismas capas y no borra nada', async () => {
   const p = await productoConCapas();
