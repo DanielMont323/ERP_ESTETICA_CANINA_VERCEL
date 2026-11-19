@@ -15,6 +15,7 @@ const router = express.Router();
 // Helper para parsear fecha YYYY-MM-DD como fecha de calendario (no UTC con timezone)
 // Usa la función centralizada de timezone.js para evitar desfase
 const { parseCalendarDate, hoyCalendarioTepic } = require('../helpers/timezone');
+const { fechaCaducidad, actualizarCaducidadProducto } = require('../helpers/caducidad');
 
 // ============================================================================
 // HELPERS FIFO DE COMPRAS
@@ -51,8 +52,24 @@ const normalizarItemCompra = (item) => {
     discountPercentage: item.discountPercentage || 0,
     hasTax,
     taxRate,
-    costIncludesTax
+    costIncludesTax,
+    expirationDate: (() => {
+      try { return fechaCaducidad(item.expirationDate); } catch (e) { e.httpStatus = 400; throw e; }
+    })()
   };
+};
+
+// Precio al público capturado en la compra (opcional): si viene, actualiza el precio de venta del producto.
+const precioPublicoDe = (item) => {
+  const v = item.precioPublico;
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) {
+    const e = new Error('Precio al público inválido');
+    e.httpStatus = 400;
+    throw e;
+  }
+  return Math.round(n * 100) / 100;
 };
 
 // Costo FIFO por item (fórmula aprobada en POST): (base × cantidad − descuento) + IVA si aplica
@@ -229,7 +246,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const compras = await Compra.find(query)
       .populate('proveedor', 'name contact phone')
       .populate('user', 'name')
-      .populate('items.product', 'name sku')
+      .populate('items.product', 'name sku price')
       .sort({ date: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
@@ -262,7 +279,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const compra = await Compra.findById(req.params.id)
       .populate('proveedor', 'name contact phone email creditDays')
       .populate('user', 'name')
-      .populate('items.product', 'name sku category');
+      .populate('items.product', 'name sku category price');
     
     if (!compra) {
       return res.status(404).json({
@@ -386,12 +403,22 @@ router.post('/', authenticateToken, async (req, res) => {
         taxRate: item.taxRate !== undefined ? item.taxRate : 0.16,
         costIncludesTax: item.costIncludesTax || false
       };
+      let precioPublico;
+      try {
+        processedItem.expirationDate = fechaCaducidad(item.expirationDate);
+        precioPublico = precioPublicoDe(item);
+      } catch (e) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({ success: false, message: `${e.message} en "${producto.name}"` });
+      }
 
       processedItems.push(processedItem);
 
       // Actualizar stock y costo del producto
       producto.stock += item.quantity;
       producto.cost = baseUnitCost;
+      if (precioPublico !== undefined && precioPublico !== producto.price) producto.price = precioPublico;
       await producto.save({ session });
     }
 
@@ -487,9 +514,11 @@ router.post('/', authenticateToken, async (req, res) => {
           supplier: proveedor,
           isInitialLayer: false,
           receivedDate: compra[0].date,
-          remainingQuantity: item.quantity
+          remainingQuantity: item.quantity,
+          expirationDate: item.expirationDate || undefined
         });
         await layer.save({ session });
+        if (item.expirationDate) await actualizarCaducidadProducto(item.product, session);
 
         // Crear movimiento de inventario con sourceId real
         const movement = new InventoryMovement({
@@ -1137,6 +1166,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
         }
 
         // Actualizar campos de la compra
+        const preciosPublicos = items ? items.map(precioPublicoDe) : [];
         if (items) {
           const normalizedItems = items.map(normalizarItemCompra); // F8
 
@@ -1200,6 +1230,12 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
         await compra.save({ session });
 
+        // Precio al público editado en la compra → precio de venta del producto
+        for (let i = 0; i < preciosPublicos.length; i++) {
+          if (preciosPublicos[i] === undefined) continue;
+          await Producto.updateOne({ _id: compra.items[i].product, price: { $ne: preciosPublicos[i] } }, { $set: { price: preciosPublicos[i] } }, { session });
+        }
+
         // Crear nuevas capas FIFO
         for (let i = 0; i < compra.items.length; i++) {
           const item = compra.items[i];
@@ -1224,9 +1260,11 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
             costSource: 'compra',
             supplier: compra.proveedor,
             isActive: true,
-            receivedDate: compra.date || new Date()
+            receivedDate: compra.date || new Date(),
+            expirationDate: item.expirationDate || undefined
           });
           await newLayer.save({ session });
+          if (item.expirationDate) await actualizarCaducidadProducto(item.product, session);
 
           // Crear movimiento de entrada
           const newMovement = new InventoryMovement({
@@ -1371,6 +1409,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
         }
 
         // Si no es transitorio o se agotaron reintentos, retornar error
+        if (error.httpStatus) {
+          return res.status(error.httpStatus).json({ success: false, message: error.message });
+        }
         if (error.name === 'ValidationError') {
           const messages = Object.values(error.errors).map(val => val.message);
           return res.status(400).json({

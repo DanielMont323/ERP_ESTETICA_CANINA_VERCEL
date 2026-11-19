@@ -71,7 +71,9 @@ const Purchases = () => {
     unitCost: 0,
     hasTax: false,
     taxRate: 0.16,
-    costIncludesTax: false
+    costIncludesTax: false,
+    expirationDate: '',
+    precioPublico: null
   });
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [discountInfo, setDiscountInfo] = useState(null);
@@ -109,7 +111,9 @@ const Purchases = () => {
       unitCost: 0,
       hasTax: false,
       taxRate: 0.16,
-      costIncludesTax: false
+      costIncludesTax: false,
+      expirationDate: '',
+      precioPublico: null
     });
     setSelectedProduct(null);
     setDiscountInfo(null);
@@ -254,9 +258,9 @@ const Purchases = () => {
         const results = response.data.data;
 
         if (results.length === 1) {
-          // Producto único encontrado - cargar en currentItem
+          // Producto único (escaneo): se agrega directo a la lista, sin presionar "Agregar"
           const product = results[0];
-          await handleProductChange(product._id);
+          await agregarEscaneado(product);
 
           setProductSearchQuery('');
           setSearchResults([]);
@@ -278,6 +282,49 @@ const Purchases = () => {
         console.error('Error searching product:', error);
       }
     }
+  };
+
+  // Agregar un producto escaneado directo a la lista. Si ya está, suma una pieza.
+  // Si no hay costo (ni del proveedor ni del producto), se carga en el formulario para capturarlo.
+  const itemsRef = useRef([]);
+  itemsRef.current = formData.items;
+  const agregarEscaneado = async (product) => {
+    const idx = itemsRef.current.findIndex(i => i.product === product._id);
+    if (idx !== -1) {
+      const nueva = (Number(itemsRef.current[idx].quantity) || 0) + 1;
+      itemsRef.current = itemsRef.current.map((it, i) => (i === idx ? { ...it, quantity: nueva } : it));
+      setFormData(prev => ({ ...prev, items: prev.items.map((it, i) => (i === idx ? { ...it, quantity: nueva } : it)) }));
+      toast.success(`${product.name}: ${nueva} piezas`);
+      return;
+    }
+    let unitCost = Number(product.cost) || 0;
+    if (formData.proveedor) {
+      try {
+        const r = await supplierProductsAPI.getAll({ supplier: formData.proveedor, product: product._id, active: true });
+        if (r.data.data.length > 0) unitCost = Number(r.data.data[0].baseCost) || unitCost;
+      } catch (e) { /* se usa el costo del producto */ }
+    }
+    if (!(unitCost > 0)) {
+      await handleProductChange(product._id);
+      toast(`Captura el costo de "${product.name}" y presiona Agregar`, { icon: 'ℹ️' });
+      return;
+    }
+    const nuevo = {
+      product: product._id, productName: product.name, quantity: 1, unitCost,
+      hasTax: false, taxRate: 0.16, costIncludesTax: false, expirationDate: '', precioPublico: product.price ?? null
+    };
+    itemsRef.current = [...itemsRef.current, nuevo];
+    setFormData(prev => ({ ...prev, items: [...prev.items, nuevo] }));
+    toast.success(`${product.name} agregado`);
+  };
+
+  const handleItemPriceChange = (index, valor) => {
+    const v = valor === '' ? null : valor;
+    setFormData(prev => ({ ...prev, items: prev.items.map((it, i) => (i === index ? { ...it, precioPublico: v } : it)) }));
+  };
+
+  const handleItemExpirationChange = (index, fecha) => {
+    setFormData(prev => ({ ...prev, items: prev.items.map((it, i) => (i === index ? { ...it, expirationDate: fecha } : it)) }));
   };
 
   const handleAddItem = async () => {
@@ -303,7 +350,7 @@ const Purchases = () => {
       toast.success('Producto agregado');
     }
     
-    setCurrentItem({ product: '', productName: '', quantity: 1, unitCost: 0, hasTax: false, taxRate: 0.16, costIncludesTax: false });
+    setCurrentItem({ product: '', productName: '', quantity: 1, unitCost: 0, hasTax: false, taxRate: 0.16, costIncludesTax: false, expirationDate: '', precioPublico: null });
     setSelectedProduct(null);
     setDiscountInfo(null);
   };
@@ -316,7 +363,7 @@ const Purchases = () => {
     // Si eliminamos el item que se está editando, limpiar editingItemIndex
     if (editingItemIndex === index) {
       setEditingItemIndex(null);
-      setCurrentItem({ product: '', productName: '', quantity: 1, unitCost: 0, hasTax: false, taxRate: 0.16, costIncludesTax: false });
+      setCurrentItem({ product: '', productName: '', quantity: 1, unitCost: 0, hasTax: false, taxRate: 0.16, costIncludesTax: false, expirationDate: '', precioPublico: null });
       setSelectedProduct(null);
     }
   };
@@ -381,7 +428,9 @@ const Purchases = () => {
         unitCost: existingItem.unitCost,
         hasTax: existingItem.hasTax,
         taxRate: existingItem.taxRate,
-        costIncludesTax: existingItem.costIncludesTax
+        costIncludesTax: existingItem.costIncludesTax,
+        expirationDate: existingItem.expirationDate || '',
+        precioPublico: product?.price ?? existingItem.precioPublico ?? null
       });
       return;
     } else {
@@ -425,7 +474,9 @@ const Purchases = () => {
       unitCost: unitCost,
       hasTax: currentItem.hasTax !== undefined ? currentItem.hasTax : false,
       taxRate: currentItem.taxRate || 0.16,
-      costIncludesTax: currentItem.costIncludesTax || false
+      costIncludesTax: currentItem.costIncludesTax || false,
+      expirationDate: '',
+      precioPublico: product?.price ?? null
     });
   };
 
@@ -511,7 +562,9 @@ const Purchases = () => {
       ...item,
       productName: item.productName || item.product?.name || 'Producto no disponible',
       hasTax: item.hasTax !== undefined ? item.hasTax : true,
-      taxRate: item.taxRate !== undefined ? item.taxRate : 0.16
+      taxRate: item.taxRate !== undefined ? item.taxRate : 0.16,
+      expirationDate: item.expirationDate ? new Date(item.expirationDate).toISOString().slice(0, 10) : '',
+      precioPublico: item.product?.price ?? null
     }));
     
     // Cargar datos de la compra en el formulario
@@ -1148,6 +1201,40 @@ const Purchases = () => {
                         </div>
                       )}
                     </div>
+                    <div>
+                      <label className="form-label">Precio al público</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={currentItem.precioPublico ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value === '' ? null : e.target.value;
+                          setCurrentItem({ ...currentItem, precioPublico: v });
+                          updateCurrentItemInList({ precioPublico: v });
+                        }}
+                        className="form-input"
+                        placeholder="Sin precio"
+                        title="Al guardar la compra se actualiza el precio de venta del producto"
+                      />
+                      {Number(currentItem.precioPublico) > 0 && currentItem.unitCost > 0 && (
+                        <p className={`text-xs mt-1 ${Number(currentItem.precioPublico) > currentItem.unitCost ? 'text-success-700' : 'text-danger-600'}`}>
+                          Margen: {Math.round((1 - currentItem.unitCost / Number(currentItem.precioPublico)) * 100)}%
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="form-label">Caducidad (opcional)</label>
+                      <input
+                        type="date"
+                        value={currentItem.expirationDate || ''}
+                        onChange={(e) => {
+                          setCurrentItem({ ...currentItem, expirationDate: e.target.value });
+                          updateCurrentItemInList({ expirationDate: e.target.value });
+                        }}
+                        className="form-input"
+                      />
+                    </div>
                     <div className="sm:col-span-2 lg:col-span-4 flex items-end">
                       <button
                         type="button"
@@ -1189,6 +1276,14 @@ const Purchases = () => {
                               <p className="text-sm text-gray-500 dark:text-dark-textSecondary">
                                 {formatCurrency(item.unitCost)} c/u
                               </p>
+                              <label className="text-xs text-gray-500 dark:text-dark-textSecondary flex items-center gap-2 mt-1">
+                                Precio público
+                                <input type="number" min="0" step="0.01" value={item.precioPublico ?? ''} onChange={(e) => handleItemPriceChange(index, e.target.value)} className="form-input text-xs py-1 w-24" />
+                              </label>
+                              <label className="text-xs text-gray-500 dark:text-dark-textSecondary flex items-center gap-2 mt-1">
+                                Caducidad
+                                <input type="date" value={item.expirationDate || ''} onChange={(e) => handleItemExpirationChange(index, e.target.value)} className="form-input text-xs py-1 w-36" />
+                              </label>
                             </div>
                             <button
                               type="button"
@@ -1250,12 +1345,14 @@ const Purchases = () => {
                   {/* Desktop: Table View */}
                   {formData.items.length > 0 && (
                     <div className="hidden sm:block border border-gray-200 dark:border-dark-border rounded-xl p-3 bg-white dark:bg-dark-card overflow-x-auto -mx-3 px-3">
-                      <table className="w-full text-sm min-w-[500px]">
+                      <table className="w-full text-sm min-w-[760px]">
                         <thead>
                           <tr>
                             <th className="text-left py-2">Producto</th>
                             <th className="text-left py-2">Cantidad</th>
                             <th className="text-left py-2">Costo Unitario</th>
+                            <th className="text-left py-2">Precio público</th>
+                            <th className="text-left py-2">Caducidad</th>
                             <th className="text-left py-2">IVA</th>
                             <th className="text-left py-2">Subtotal</th>
                             <th className="py-2"></th>
@@ -1282,6 +1379,28 @@ const Purchases = () => {
                                   value={item.unitCost}
                                   onChange={(e) => handleItemCostChange(index, e.target.value)}
                                   className="form-input w-24"
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.precioPublico ?? ''}
+                                  onChange={(e) => handleItemPriceChange(index, e.target.value)}
+                                  className="form-input w-24"
+                                  placeholder="—"
+                                  aria-label={`Precio al público de ${item.productName || 'producto'}`}
+                                  title="Al guardar la compra se actualiza el precio de venta del producto"
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="date"
+                                  value={item.expirationDate || ''}
+                                  onChange={(e) => handleItemExpirationChange(index, e.target.value)}
+                                  className="form-input w-36"
+                                  aria-label={`Caducidad de ${item.productName || 'producto'}`}
                                 />
                               </td>
                               <td>

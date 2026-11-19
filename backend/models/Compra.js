@@ -60,6 +60,10 @@ const itemCompraSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
     description: 'Indica si unitCost incluye IVA'
+  },
+  // Opcional (agregado 2026-11): caducidad del lote comprado; se copia a su capa FIFO
+  expirationDate: {
+    type: Date
   }
 });
 
