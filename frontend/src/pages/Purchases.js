@@ -288,12 +288,31 @@ const Purchases = () => {
   // Si no hay costo (ni del proveedor ni del producto), se carga en el formulario para capturarlo.
   const itemsRef = useRef([]);
   itemsRef.current = formData.items;
+  const cargarEnFormulario = (item, index, product) => {
+    setEditingItemIndex(index);
+    setSelectedProduct(product || products.find(p => p._id === item.product) || { _id: item.product, name: item.productName });
+    setCurrentItem({
+      product: item.product,
+      productName: item.productName,
+      quantity: item.quantity,
+      unitCost: item.unitCost,
+      hasTax: !!item.hasTax,
+      taxRate: item.taxRate ?? 0.16,
+      costIncludesTax: !!item.costIncludesTax,
+      expirationDate: item.expirationDate || '',
+      precioPublico: item.precioPublico ?? null
+    });
+    setDiscountInfo(null);
+  };
+
   const agregarEscaneado = async (product) => {
     const idx = itemsRef.current.findIndex(i => i.product === product._id);
     if (idx !== -1) {
       const nueva = (Number(itemsRef.current[idx].quantity) || 0) + 1;
-      itemsRef.current = itemsRef.current.map((it, i) => (i === idx ? { ...it, quantity: nueva } : it));
+      const actualizado = { ...itemsRef.current[idx], quantity: nueva };
+      itemsRef.current = itemsRef.current.map((it, i) => (i === idx ? actualizado : it));
       setFormData(prev => ({ ...prev, items: prev.items.map((it, i) => (i === idx ? { ...it, quantity: nueva } : it)) }));
+      cargarEnFormulario(actualizado, idx, product);
       toast.success(`${product.name}: ${nueva} piezas`);
       return;
     }
@@ -313,18 +332,19 @@ const Purchases = () => {
       product: product._id, productName: product.name, quantity: 1, unitCost,
       hasTax: false, taxRate: 0.16, costIncludesTax: false, expirationDate: '', precioPublico: product.price ?? null
     };
+    const nuevoIndex = itemsRef.current.length;
     itemsRef.current = [...itemsRef.current, nuevo];
     setFormData(prev => ({ ...prev, items: [...prev.items, nuevo] }));
+    cargarEnFormulario(nuevo, nuevoIndex, product);
     toast.success(`${product.name} agregado`);
   };
 
   const handleItemPriceChange = (index, valor) => {
-    const v = valor === '' ? null : valor;
-    setFormData(prev => ({ ...prev, items: prev.items.map((it, i) => (i === index ? { ...it, precioPublico: v } : it)) }));
+    cambiarItem(index, { precioPublico: valor === '' ? null : valor });
   };
 
   const handleItemExpirationChange = (index, fecha) => {
-    setFormData(prev => ({ ...prev, items: prev.items.map((it, i) => (i === index ? { ...it, expirationDate: fecha } : it)) }));
+    cambiarItem(index, { expirationDate: fecha });
   };
 
   const handleAddItem = async () => {
@@ -365,21 +385,26 @@ const Purchases = () => {
       setEditingItemIndex(null);
       setCurrentItem({ product: '', productName: '', quantity: 1, unitCost: 0, hasTax: false, taxRate: 0.16, costIncludesTax: false, expirationDate: '', precioPublico: null });
       setSelectedProduct(null);
+    } else if (editingItemIndex !== null && editingItemIndex > index) {
+      setEditingItemIndex(editingItemIndex - 1);
     }
   };
 
+  const cambiarItem = (index, cambios) => {
+    setFormData(prev => ({ ...prev, items: prev.items.map((it, i) => (i === index ? { ...it, ...cambios } : it)) }));
+    if (index === editingItemIndex) setCurrentItem(prev => ({ ...prev, ...cambios }));
+  };
+
   const handleItemQuantityChange = (index, newQuantity) => {
-    if (newQuantity <= 0) return;
-    const updatedItems = [...formData.items];
-    updatedItems[index].quantity = parseInt(newQuantity);
-    setFormData({ ...formData, items: updatedItems });
+    const q = parseInt(newQuantity, 10);
+    if (!(q > 0)) return;
+    cambiarItem(index, { quantity: q });
   };
 
   const handleItemCostChange = (index, newCost) => {
-    if (newCost < 0) return;
-    const updatedItems = [...formData.items];
-    updatedItems[index].unitCost = parseFloat(newCost);
-    setFormData({ ...formData, items: updatedItems });
+    const c = parseFloat(newCost);
+    if (Number.isNaN(c) || c < 0) return;
+    cambiarItem(index, { unitCost: c });
   };
 
   // Helper para actualizar el item actualmente seleccionado en formData.items
@@ -1241,8 +1266,13 @@ const Purchases = () => {
                         onClick={handleAddItem}
                         className="btn btn-primary btn-md w-full sm:w-auto"
                       >
-                        Agregar
+                        {editingItemIndex !== null ? 'Listo' : 'Agregar'}
                       </button>
+                      {editingItemIndex !== null && (
+                        <span className="ml-3 self-center text-xs text-gray-500 dark:text-dark-textSecondary">
+                          Editando "{formData.items[editingItemIndex]?.productName}" de la lista: los cambios se guardan al momento.
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -1270,9 +1300,9 @@ const Purchases = () => {
                         <div key={index} className="space-y-2">
                           <div className="flex items-center justify-between">
                             <div className="flex-1">
-                              <p className="font-medium text-gray-900 dark:text-dark-text text-sm">
+                              <button type="button" onClick={() => cargarEnFormulario(item, index)} className={`font-medium text-sm text-left ${index === editingItemIndex ? 'text-brand-burgundy' : 'text-gray-900 dark:text-dark-text'}`}>
                                 {item.productName || 'Producto no disponible'}
-                              </p>
+                              </button>
                               <p className="text-sm text-gray-500 dark:text-dark-textSecondary">
                                 {formatCurrency(item.unitCost)} c/u
                               </p>
@@ -1361,7 +1391,16 @@ const Purchases = () => {
                         <tbody>
                           {formData.items.map((item, index) => (
                             <tr key={index}>
-                              <td>{item.productName || 'Producto no disponible'}</td>
+                              <td>
+                                <button
+                                  type="button"
+                                  onClick={() => cargarEnFormulario(item, index)}
+                                  className={`text-left hover:underline ${index === editingItemIndex ? 'font-semibold text-brand-burgundy' : ''}`}
+                                  title="Editar en el formulario"
+                                >
+                                  {item.productName || 'Producto no disponible'}
+                                </button>
+                              </td>
                               <td>
                                 <input
                                   type="number"
@@ -1403,17 +1442,27 @@ const Purchases = () => {
                                   aria-label={`Caducidad de ${item.productName || 'producto'}`}
                                 />
                               </td>
-                              <td>
-                                {!item.hasTax ? (
-                                  <span className="text-gray-500 dark:text-dark-textSecondary text-sm">Sin IVA</span>
-                                ) : item.costIncludesTax ? (
-                                  <span className="text-brand-burgundy text-sm font-medium">
-                                    {((item.taxRate || 0.16) * 100).toFixed(0)}% incluido
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-700 dark:text-dark-textSecondary text-sm">
-                                    {((item.taxRate || 0.16) * 100).toFixed(0)}%
-                                  </span>
+                              <td className="whitespace-nowrap text-sm">
+                                <label className="flex items-center gap-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!item.hasTax}
+                                    onChange={(e) => cambiarItem(index, { hasTax: e.target.checked, costIncludesTax: e.target.checked ? item.costIncludesTax : false })}
+                                    className="h-4 w-4 text-brand-burgundy border-gray-300 rounded"
+                                    aria-label={`Lleva IVA ${item.productName || ''}`}
+                                  />
+                                  {((item.taxRate || 0.16) * 100).toFixed(0)}%
+                                </label>
+                                {item.hasTax && (
+                                  <label className="flex items-center gap-1 mt-1 text-xs">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!item.costIncludesTax}
+                                      onChange={(e) => cambiarItem(index, { costIncludesTax: e.target.checked })}
+                                      className="h-3 w-3 text-brand-burgundy border-gray-300 rounded"
+                                    />
+                                    incluido
+                                  </label>
                                 )}
                               </td>
                               <td>{formatCurrency(item.quantity * item.unitCost)}</td>
