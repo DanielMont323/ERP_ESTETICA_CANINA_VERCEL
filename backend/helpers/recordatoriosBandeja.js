@@ -32,6 +32,12 @@ const ORDEN_ESTADO = { retrasado: 0, hoy: 1, pendiente: 2, completado: 3 };
 
 const quien = (u) => ({ usuario: u._id, nombre: u.name });
 
+// Fecha vigente del recordatorio de próxima dosis: la del último reagendado o, si no hay, proximaDosis.
+const proximaDosisEfectiva = (ap) => {
+  const r = Array.isArray(ap?.reagendado) && ap.reagendado.length ? ap.reagendado[ap.reagendado.length - 1] : null;
+  return r?.fecha || ap?.proximaDosis || null;
+};
+
 function deManual(r, ahora) {
   const completado = r.status === 'completado';
   return {
@@ -61,6 +67,8 @@ function deCarnet(carnet, ap, siguiente, ahora) {
   if (atendido) completado = { fecha: atendido.fecha, usuario: atendido.usuario, nombre: atendido.nombre, motivo: 'manual' };
   else if (siguiente) completado = { fecha: siguiente.fecha, motivo: 'siguiente_dosis_aplicada' };
   const mascota = carnet.mascota && typeof carnet.mascota === 'object' ? carnet.mascota : null;
+  const fechaVigente = proximaDosisEfectiva(ap);
+  const reagendados = Array.isArray(ap.reagendado) ? ap.reagendado : [];
   const dueno = carnet.propietario && typeof carnet.propietario === 'object' ? carnet.propietario : null;
   return {
     id: `carnet-${carnet._id}-${ap._id}`,
@@ -70,11 +78,13 @@ function deCarnet(carnet, ap, siguiente, ahora) {
     tipo: ap.tipo === 'desparasitante' ? 'desparasitante' : 'vacuna',
     titulo: `${ap.tipo === 'desparasitante' ? 'Desparasitación' : 'Vacuna'}: ${nombreProducto}`,
     descripcion: `Mascota: ${mascota?.name || carnet.nombreMascota} · Dueño: ${dueno?.name || carnet.nombrePropietario}`,
-    fecha: ap.proximaDosis,
-    dia: diaDe(ap.proximaDosis),
+    fecha: fechaVigente,
+    dia: diaDe(fechaVigente),
+    fechaOriginal: ap.proximaDosis,
+    reagendado: reagendados.length ? { ...reagendados[reagendados.length - 1], veces: reagendados.length } : null,
     prioridad: 'media',
     status: completado ? 'completado' : 'pendiente',
-    estado: completado ? 'completado' : estadoPorFecha(ap.proximaDosis, ahora),
+    estado: completado ? 'completado' : estadoPorFecha(fechaVigente, ahora),
     completado,
     duenoNotificado: ap.duenoNotificado?.fecha ? ap.duenoNotificado : null,
     puedeNotificarDueno: true,
@@ -145,4 +155,4 @@ async function construirBandeja({ vista = 'pendientes', ahora = new Date() } = {
   return { items, conteo, hoy: hoyTepic(ahora), cuentasConRecordatorio };
 }
 
-module.exports = { construirBandeja, estadoPorFecha, hoyTepic, diaDe, quien };
+module.exports = { construirBandeja, estadoPorFecha, hoyTepic, diaDe, quien, proximaDosisEfectiva };

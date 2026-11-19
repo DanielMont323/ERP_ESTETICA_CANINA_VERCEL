@@ -1,17 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { X, Syringe, ShoppingCart, CheckCircle } from 'lucide-react';
+import { X, Syringe, ShoppingCart, CheckCircle, CalendarClock } from 'lucide-react';
 import { remindersAPI } from '../services/api';
 import { hoyTepicISO, formatCalendarDate } from '../helpers/dateUtils';
 
 // Al completar el recordatorio de una vacuna o desparasitación del carnet se pregunta qué pasó:
 //  - Se cobra ahora → Ventas (la venta la registra en el carnet y descuenta inventario).
 //  - Ya se aplicó aquí → se registra la nueva aplicación en el carnet (sin tocar inventario).
+//  - Reagendar: cambia la fecha del recordatorio (queda en el historial; la próxima dosis original no se toca).
 //  - Solo cerrar el recordatorio (no se aplicó aquí, el dueño no quiso, etc.).
-const CompletarDosisModal = ({ item, onClose, onListo }) => {
+const CompletarDosisModal = ({ item, onClose, onListo, pasoInicial = 'elegir' }) => {
   const navigate = useNavigate();
-  const [paso, setPaso] = useState('elegir');
+  const [paso, setPaso] = useState(pasoInicial);
+  const [nuevaFecha, setNuevaFecha] = useState('');
+  const [nota, setNota] = useState('');
   const [fecha, setFecha] = useState(hoyTepicISO());
   const [dias, setDias] = useState(item.diasSugeridos ? String(item.diasSugeridos) : '');
   const [observaciones, setObservaciones] = useState('');
@@ -43,6 +46,18 @@ const CompletarDosisModal = ({ item, onClose, onListo }) => {
       onListo();
     } catch (e) {
       toast.error(e.response?.data?.message || 'No se pudo registrar la aplicación');
+      setGuardando(false);
+    }
+  };
+
+  const reagendar = async () => {
+    setGuardando(true);
+    try {
+      await remindersAPI.reagendarCarnet(item.carnetId, item.aplicacionId, { fecha: nuevaFecha, nota });
+      toast.success(`Recordatorio reagendado para el ${formatCalendarDate(`${nuevaFecha}T12:00:00Z`)}`);
+      onListo();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'No se pudo reagendar');
       setGuardando(false);
     }
   };
@@ -117,11 +132,42 @@ const CompletarDosisModal = ({ item, onClose, onListo }) => {
                 onClick={() => setPaso('registrar')}
               />
               <Opcion
+                icono={CalendarClock}
+                titulo="Reagendar"
+                ayuda="Todavía no se aplica: cambiar la fecha del recordatorio (por ejemplo, el dueño pidió otro día). Sigue pendiente."
+                onClick={() => setPaso('reagendar')}
+              />
+              <Opcion
                 icono={CheckCircle}
                 titulo="Solo cerrar el recordatorio"
                 ayuda="No se aplicó aquí: el dueño no quiso, se aplicó en otro lugar o la mascota ya no viene."
                 onClick={soloCerrar}
               />
+            </div>
+          )}
+
+          {paso === 'reagendar' && (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-700 dark:text-dark-textSecondary">
+                Fecha actual del recordatorio: <strong>{formatCalendarDate(item.fecha)}</strong>
+              </p>
+              <div>
+                <label className="form-label" htmlFor="nueva-fecha">Nueva fecha</label>
+                <input id="nueva-fecha" type="date" className="form-input" value={nuevaFecha} min={hoyTepicISO()} onChange={e => setNuevaFecha(e.target.value)} />
+              </div>
+              <div>
+                <label className="form-label" htmlFor="nota-reagendar">Motivo (opcional)</label>
+                <input id="nota-reagendar" className="form-input" value={nota} maxLength={300} onChange={e => setNota(e.target.value)} placeholder="Ej. el dueño pidió el sábado" />
+              </div>
+              <p className="text-xs text-gray-500 dark:text-dark-textSecondary">El recordatorio sigue pendiente con la nueva fecha. La fecha original queda en el historial.</p>
+              <div className="flex justify-end gap-2 pt-1">
+                {pasoInicial === 'elegir' && (
+                  <button type="button" onClick={() => setPaso('elegir')} disabled={guardando} className="btn btn-secondary btn-md">Atrás</button>
+                )}
+                <button type="button" onClick={reagendar} disabled={guardando || !nuevaFecha || nuevaFecha < hoyTepicISO()} className="btn btn-primary btn-md">
+                  {guardando ? 'Guardando…' : 'Reagendar'}
+                </button>
+              </div>
             </div>
           )}
 

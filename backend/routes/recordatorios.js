@@ -6,7 +6,7 @@ const Mascota = require('../models/Mascota');
 const Producto = require('../models/Producto');
 const { getCurrentDateGMT7 } = require('../helpers/timezone');
 const mongoose = require('mongoose');
-const { construirBandeja, quien, hoyTepic } = require('../helpers/recordatoriosBandeja');
+const { construirBandeja, quien, hoyTepic, diaDe, proximaDosisEfectiva } = require('../helpers/recordatoriosBandeja');
 const { detallePago } = require('../helpers/recordatorioPago');
 const router = express.Router();
 
@@ -215,7 +215,7 @@ router.get('/dashboard', async (req, res) => {
       for (const vacuna of carnet.vacunas) {
         if (!vacuna.proximaDosis) continue;
         
-        const proximaDosis = new Date(vacuna.proximaDosis);
+        const proximaDosis = new Date(proximaDosisEfectiva(vacuna));
         proximaDosis.setUTCHours(0, 0, 0, 0);
         
         // Solo mostrar vacunas que no están vencidas
@@ -240,7 +240,7 @@ router.get('/dashboard', async (req, res) => {
           type: 'vacuna',
           title: vacuna.vacuna?.nombre || vacuna.nombre || 'Vacuna',
           description: `Mascota: ${carnet.mascota.nombre}`,
-          date: vacuna.proximaDosis,
+          date: proximaDosisEfectiva(vacuna),
           urgency,
           urgencyText,
           priority: urgency === 'hoy' ? 'alta' : urgency === 'manana' ? 'media' : 'baja',
@@ -396,6 +396,50 @@ router.post('/carnet/:carnetId/:aplicacionId/aplicar', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: 'Error al registrar la aplicación' });
+  }
+});
+
+// @route   PATCH /api/recordatorios/carnet/:carnetId/:aplicacionId/reagendar
+// @desc    Reagendar el recordatorio de próxima dosis. Body: { fecha: 'AAAA-MM-DD' (hoy o después), nota? }
+//          NO cambia proximaDosis: agrega una entrada al historial "reagendado" de ESA aplicación.
+router.patch('/carnet/:carnetId/:aplicacionId/reagendar', async (req, res) => {
+  try {
+    const { carnetId, aplicacionId } = req.params;
+    if (!mongoose.isValidObjectId(carnetId) || !mongoose.isValidObjectId(aplicacionId)) {
+      return res.status(400).json({ success: false, message: 'Identificador inválido' });
+    }
+    const { fecha, nota } = req.body || {};
+    if (typeof fecha !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(fecha) || Number.isNaN(new Date(`${fecha}T12:00:00Z`).getTime())) {
+      return res.status(400).json({ success: false, message: 'Fecha inválida' });
+    }
+    if (fecha < hoyTepic()) return res.status(400).json({ success: false, message: 'La nueva fecha no puede ser anterior a hoy' });
+
+    const carnet = await CarnetVacunacion.findOne({ _id: carnetId, 'vacunas._id': aplicacionId }).select('vacunas').lean();
+    if (!carnet) return res.status(404).json({ success: false, message: 'Aplicación no encontrada en el carnet' });
+    const ap = carnet.vacunas.find(v => String(v._id) === String(aplicacionId));
+    if (!ap.proximaDosis) return res.status(400).json({ success: false, message: 'Esta aplicación no tiene próxima dosis' });
+    if (ap.atendido?.fecha) return res.status(409).json({ success: false, message: 'El recordatorio ya estaba completado' });
+
+    const anterior = proximaDosisEfectiva(ap);
+    if (diaDe(anterior) === fecha) return res.status(400).json({ success: false, message: 'Es la misma fecha que ya tiene' });
+    const entrada = {
+      fecha: new Date(`${fecha}T12:00:00Z`),
+      anterior,
+      nota: typeof nota === 'string' && nota.trim() ? nota.trim().slice(0, 300) : undefined,
+      ...quien(req.user),
+      en: new Date()
+    };
+    // Atómico: solo si sigue sin completarse
+    const r = await CarnetVacunacion.updateOne(
+      { _id: carnetId },
+      { $push: { 'vacunas.$[a].reagendado': entrada } },
+      { arrayFilters: [{ 'a._id': new mongoose.Types.ObjectId(aplicacionId), 'a.atendido.fecha': { $exists: false } }] }
+    );
+    if (r.modifiedCount === 0) return res.status(409).json({ success: false, message: 'El recordatorio ya estaba completado' });
+    res.json({ success: true, data: entrada, message: 'Recordatorio reagendado' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Error al reagendar el recordatorio' });
   }
 });
 
@@ -760,7 +804,7 @@ router.get('/automatic/vaccines', async (req, res) => {
       for (const vacuna of carnet.vacunas) {
         if (!vacuna.proximaDosis) continue;
         
-        const proximaDosis = new Date(vacuna.proximaDosis);
+        const proximaDosis = new Date(proximaDosisEfectiva(vacuna));
         proximaDosis.setUTCHours(0, 0, 0, 0);
         
         let urgency = 'proxima';
@@ -785,7 +829,7 @@ router.get('/automatic/vaccines', async (req, res) => {
           type: 'vacuna',
           title: `Vacuna: ${vacuna.vacuna?.nombre || vacuna.nombre || 'Vacuna'}`,
           description: `Mascota: ${carnet.mascota.nombre}`,
-          date: vacuna.proximaDosis,
+          date: proximaDosisEfectiva(vacuna),
           urgency,
           urgencyText,
           priority: urgency === 'vencida' ? 'alta' : urgency === 'hoy' ? 'alta' : urgency === 'manana' ? 'media' : 'baja',
@@ -941,7 +985,7 @@ router.get('/dashboard', async (req, res) => {
       for (const vacuna of carnet.vacunas) {
         if (!vacuna.proximaDosis) continue;
         
-        const proximaDosis = new Date(vacuna.proximaDosis);
+        const proximaDosis = new Date(proximaDosisEfectiva(vacuna));
         proximaDosis.setUTCHours(0, 0, 0, 0);
         
         // Solo mostrar vacunas que no están vencidas
@@ -966,7 +1010,7 @@ router.get('/dashboard', async (req, res) => {
           type: 'vacuna',
           title: vacuna.vacuna?.nombre || vacuna.nombre || 'Vacuna',
           description: `Mascota: ${carnet.mascota.nombre}`,
-          date: vacuna.proximaDosis,
+          date: proximaDosisEfectiva(vacuna),
           urgency,
           urgencyText,
           priority: urgency === 'hoy' ? 'alta' : urgency === 'manana' ? 'media' : 'baja',

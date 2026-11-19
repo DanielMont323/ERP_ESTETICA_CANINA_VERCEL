@@ -51,7 +51,19 @@ const vacunaSchema = new mongoose.Schema({
     fecha: { type: Date },
     usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
     nombre: { type: String, trim: true }
-  }
+  },
+  // --- Agregado 2026-11-19 (opcional): reagendar el recordatorio de la próxima dosis ---
+  // proximaDosis NUNCA se modifica: la fecha vigente del recordatorio es la del ÚLTIMO reagendado.
+  // Cada reagendado queda en el historial (fecha nueva, fecha anterior, quién y cuándo).
+  reagendado: [{
+    _id: false,
+    fecha: { type: Date, required: true },
+    anterior: { type: Date },
+    nota: { type: String, trim: true },
+    usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
+    nombre: { type: String, trim: true },
+    en: { type: Date }
+  }]
 });
 
 const carnetVacunacionSchema = new mongoose.Schema({

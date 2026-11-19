@@ -17,6 +17,7 @@ import {
   Trash2,
   Search,
   UserCheck,
+  CalendarClock,
   Receipt
 } from 'lucide-react';
 
@@ -52,7 +53,7 @@ const textoCompletado = (c) => {
   return `Completado${c.fecha ? ` el ${fechaHora(c.fecha)}` : ''}${c.nombre ? ` por ${c.nombre}` : ''}`;
 };
 
-const Bandeja = ({ items, conteo, vista, setVista, filtroTipo, setFiltroTipo, hoy, onCompletar, onNotificar, onEditar, onVerPago, onEliminar, ocupado }) => (
+const Bandeja = ({ items, conteo, vista, setVista, filtroTipo, setFiltroTipo, hoy, onCompletar, onNotificar, onReagendar, onEditar, onVerPago, onEliminar, ocupado }) => (
   <div className="space-y-4">
     <div className="flex flex-col md:flex-row md:items-center gap-3">
       <div className="inline-flex rounded-lg border border-gray-200 dark:border-dark-border overflow-hidden" role="tablist" aria-label="Ver recordatorios">
@@ -116,6 +117,12 @@ const Bandeja = ({ items, conteo, vista, setVista, filtroTipo, setFiltroTipo, ho
                   <span className="badge badge-gray">{etiqueta(item.tipo)}</span>
                   {manual && item.prioridad && <span className="badge badge-gray">Prioridad {item.prioridad}</span>}
                 </div>
+                {item.reagendado && (
+                  <p className="text-xs flex items-start gap-1 text-primary-800 bg-primary-50 dark:bg-transparent rounded px-2 py-1">
+                    <CalendarClock className="h-3.5 w-3.5 shrink-0 mt-px" />
+                    Reagendado{item.reagendado.veces > 1 ? ` (${item.reagendado.veces} veces)` : ''}: era el {formatCalendarDate(item.reagendado.anterior)}{item.reagendado.nombre ? ` · por ${item.reagendado.nombre}` : ''}{item.reagendado.nota ? ` · ${item.reagendado.nota}` : ''}
+                  </p>
+                )}
                 {item.duenoNotificado && (
                   <p className="text-xs inline-flex items-center gap-1 text-success-700 bg-success-50 rounded px-2 py-1">
                     <UserCheck className="h-3.5 w-3.5" />
@@ -133,6 +140,11 @@ const Bandeja = ({ items, conteo, vista, setVista, filtroTipo, setFiltroTipo, ho
                   {pendiente && item.puedeNotificarDueno && !item.duenoNotificado && (
                     <button onClick={() => onNotificar(item)} disabled={ocupado === item.id} className="btn btn-sm btn-secondary inline-flex items-center gap-1" title="Registra que ya se le avisó al dueño. El recordatorio sigue pendiente.">
                       <UserCheck className="h-4 w-4" /> Dueño notificado
+                    </button>
+                  )}
+                  {pendiente && item.origen === 'carnet' && (
+                    <button onClick={() => onReagendar(item)} disabled={ocupado === item.id} className="btn btn-sm btn-secondary inline-flex items-center gap-1" title="Cambiar la fecha del recordatorio. Sigue pendiente.">
+                      <CalendarClock className="h-4 w-4" /> Reagendar
                     </button>
                   )}
                   {manual && (
@@ -434,7 +446,7 @@ const Reminders = () => {
       )}
 
       {/* Manual Reminders */}
-      {!showAutomatic && <Bandeja items={bandejaFiltrada} conteo={conteoVista} vista={vista} setVista={setVista} filtroTipo={filtroTipo} setFiltroTipo={setFiltroTipo} hoy={hoy} onCompletar={completar} onNotificar={notificar} onEditar={handleEditReminder} onVerPago={setDetallePago} onEliminar={handleDeleteReminder} ocupado={ocupado} />}
+      {!showAutomatic && <Bandeja items={bandejaFiltrada} conteo={conteoVista} vista={vista} setVista={setVista} filtroTipo={filtroTipo} setFiltroTipo={setFiltroTipo} hoy={hoy} onCompletar={completar} onNotificar={notificar} onReagendar={(item) => setCompletarDosis({ ...item, pasoInicial: 'reagendar' })} onEditar={handleEditReminder} onVerPago={setDetallePago} onEliminar={handleDeleteReminder} ocupado={ocupado} />}
 
       {/* Modal */}
       {showModal && (
@@ -534,6 +546,7 @@ const Reminders = () => {
       {completarDosis && (
         <CompletarDosisModal
           item={completarDosis}
+          pasoInicial={completarDosis.pasoInicial || 'elegir'}
           onClose={() => setCompletarDosis(null)}
           onListo={() => { setCompletarDosis(null); refrescar(); }}
         />

@@ -271,6 +271,7 @@ export const remindersAPI = {
   getDetallePago: (id) => api.get(`/recordatorios/${id}/detalle-pago`),
   aplicarCarnet: (carnetId, aplicacionId, data) => api.post(`/recordatorios/carnet/${carnetId}/${aplicacionId}/aplicar`, data),
   atenderCarnet: (carnetId, aplicacionId) => api.patch(`/recordatorios/carnet/${carnetId}/${aplicacionId}/atender`),
+  reagendarCarnet: (carnetId, aplicacionId, data) => api.patch(`/recordatorios/carnet/${carnetId}/${aplicacionId}/reagendar`, data),
   notificarDuenoCarnet: (carnetId, aplicacionId) => api.patch(`/recordatorios/carnet/${carnetId}/${aplicacionId}/notificar-dueno`),
 };
 
