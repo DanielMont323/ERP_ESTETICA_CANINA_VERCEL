@@ -25,6 +25,41 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { formatCalendarDate, hoyTepicISO } from '../helpers/dateUtils';
 
+// Servicio con cantidad > 1 (ej. "Baño x2"): una mascota por unidad. La unidad 1 usa item.mascota y las
+// demás item.mascotasUnidades[i]. Al guardar se registra una línea por mascota (igual que agregar el servicio
+// varias veces), así el historial médico y los reportes siguen funcionando sin cambios en el servidor.
+const mascotasDeServicio = (item) =>
+  Array.from({ length: Math.max(1, Number(item.quantity) || 1) }, (_, i) => (i === 0 ? item.mascota : item.mascotasUnidades?.[i]) || '');
+
+const separarServiciosPorMascota = (items) => items.flatMap(item => {
+  const q = Number(item.quantity) || 1;
+  if (item.type !== 'servicio' || q <= 1) return [item];
+  const r2 = n => Math.round(n * 100) / 100;
+  const precio = r2(Number(item.unitPrice) || 0);
+  const montoTotal = item.discountType === 'monto' ? r2(Math.min(Number(item.discountValue) || 0, q * precio)) : 0;
+  return mascotasDeServicio(item).map((mascota, i) => {
+    let valor = Number(item.discountValue) || 0;
+    let descuento = 0;
+    if (item.discountType === 'porcentaje') {
+      descuento = r2(precio * (Math.min(Math.max(valor, 0), 100) / 100));
+    } else if (item.discountType === 'monto') {
+      const parte = r2(montoTotal / q);
+      descuento = i === q - 1 ? r2(montoTotal - parte * (q - 1)) : parte;
+      valor = descuento;
+    }
+    return {
+      ...item,
+      quantity: 1,
+      mascota,
+      mascotasUnidades: undefined,
+      discountValue: valor,
+      discountAmount: descuento,
+      subtotalBeforeDiscount: precio,
+      subtotalAfterDiscount: r2(precio - descuento)
+    };
+  });
+});
+
 const Sales = () => {
   const { user } = useAuth();
   const [sales, setSales] = useState([]);
@@ -756,7 +791,7 @@ const Sales = () => {
     }
 
     // Validar que todos los servicios tengan mascota asociada
-    const servicesWithoutPet = editCart.filter(item => item.type === 'servicio' && !item.mascota);
+    const servicesWithoutPet = editCart.filter(item => item.type === 'servicio' && mascotasDeServicio(item).some(m => !m));
     if (servicesWithoutPet.length > 0) {
       const serviceNames = servicesWithoutPet.map(s => s.name).join(', ');
       toast.error(`Los siguientes servicios requieren una mascota: ${serviceNames}`);
@@ -765,7 +800,7 @@ const Sales = () => {
 
     try {
       const updateData = {
-        items: editCart.map(item => ({
+        items: separarServiciosPorMascota(editCart).map(item => ({
           type: item.type,
           item: item.item,
           quantity: item.quantity,
@@ -892,9 +927,19 @@ const Sales = () => {
     if (quantity <= 0) {
       removeFromEditCart(index);
     } else {
-      setEditCart(editCart.map((item, i) =>
-        i === index ? { ...item, quantity } : item
-      ));
+      // Recalcular subtotal y descuento con la nueva cantidad (antes solo cambiaba la cantidad y el total no se movía)
+      setEditCart(editCart.map((item, i) => {
+        if (i !== index) return item;
+        const r2 = n => Math.round(n * 100) / 100;
+        const subtotalBeforeDiscount = r2(quantity * item.unitPrice);
+        let discountAmount = 0;
+        if (item.discountType === 'porcentaje') {
+          discountAmount = r2(subtotalBeforeDiscount * (Math.min(Math.max(Number(item.discountValue) || 0, 0), 100) / 100));
+        } else if (item.discountType === 'monto') {
+          discountAmount = r2(Math.min(Number(item.discountValue) || 0, subtotalBeforeDiscount));
+        }
+        return { ...item, quantity, subtotalBeforeDiscount, discountAmount, subtotalAfterDiscount: r2(subtotalBeforeDiscount - discountAmount) };
+      }));
     }
   };
 
@@ -1257,7 +1302,7 @@ const Sales = () => {
     }
 
     // Validar que todos los servicios tengan mascota asociada
-    const servicesWithoutPet = cart.filter(item => item.type === 'servicio' && !item.mascota);
+    const servicesWithoutPet = cart.filter(item => item.type === 'servicio' && mascotasDeServicio(item).some(m => !m));
     if (servicesWithoutPet.length > 0) {
       const serviceNames = servicesWithoutPet.map(s => s.name).join(', ');
       toast.error(`Los siguientes servicios requieren una mascota: ${serviceNames}`);
@@ -1266,7 +1311,7 @@ const Sales = () => {
 
     try {
       const saleData = {
-        items: cart.map(item => ({
+        items: separarServiciosPorMascota(cart).map(item => ({
           type: item.type,
           item: item.item,
           quantity: item.quantity,
@@ -2219,8 +2264,30 @@ const Sales = () => {
                               className={`text-sm py-1 mt-2 ${showMascotaObligatorio ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-blue-300 focus:border-blue-500 focus:ring-blue-500'}`}
                               required={showMascotaObligatorio}
                             />
-                                    {showMascotaObligatorio && !item.mascota && (
-                                      <p className="text-xs text-red-600 mt-1">⚠️ Debes seleccionar una mascota para este servicio</p>
+                                    {isService && item.quantity > 1 && [...Array(item.quantity - 1)].map((_, k) => (
+                                      <div key={k} className="mt-2">
+                                        <span className="text-xs font-semibold text-red-800">Mascota {k + 2}:</span>
+                                        <Autocomplete
+                                          placeholder="Seleccionar mascota..."
+                                          localOptions={pets}
+                                          displayValue={(p) => `${p.name} - ${p.breed}`}
+                                          getOptionValue={(p) => p._id}
+                                          value={pets.find(p => p._id === item.mascotasUnidades?.[k + 1]) || null}
+                                          onChange={(value) => {
+                                            const newCart = [...cart];
+                                            const lista = [...(newCart[index].mascotasUnidades || [])];
+                                            lista[k + 1] = value;
+                                            newCart[index] = { ...newCart[index], mascotasUnidades: lista };
+                                            setCart(newCart);
+                                          }}
+                                          minLength={0}
+                                          className="text-sm py-1 mt-1 border-red-300 focus:border-red-500 focus:ring-red-500"
+                                          required
+                                        />
+                                      </div>
+                                    ))}
+                                    {showMascotaObligatorio && mascotasDeServicio(item).some(m => !m) && (
+                                      <p className="text-xs text-red-600 mt-1">⚠️ {item.quantity > 1 ? 'Selecciona una mascota para cada unidad del servicio' : 'Debes seleccionar una mascota para este servicio'}</p>
                                     )}
                                   </div>
                                 )}
@@ -2849,8 +2916,30 @@ const Sales = () => {
                                         ))
                                       )}
                                     </select>
-                                    {showMascotaObligatorio && !item.mascota && (
-                                      <p className="text-xs text-red-600 mt-1">⚠️ Debes seleccionar una mascota para este servicio</p>
+                                    {isService && item.quantity > 1 && [...Array(item.quantity - 1)].map((_, k) => (
+                                      <div key={k} className="mt-2">
+                                        <span className="text-xs font-semibold text-red-800">Mascota {k + 2}:</span>
+                                        <select
+                                          value={item.mascotasUnidades?.[k + 1] || ''}
+                                          onChange={(e) => {
+                                            const newCart = [...editCart];
+                                            const lista = [...(newCart[index].mascotasUnidades || [])];
+                                            lista[k + 1] = e.target.value;
+                                            newCart[index] = { ...newCart[index], mascotasUnidades: lista };
+                                            setEditCart(newCart);
+                                          }}
+                                          className="form-input text-sm py-1 mt-1 border-red-300 focus:border-red-500 focus:ring-red-500"
+                                          required
+                                        >
+                                          <option value="">Seleccionar mascota...</option>
+                                          {pets.map(pet => (
+                                            <option key={pet._id} value={pet._id}>{pet.name} - {pet.breed}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    ))}
+                                    {showMascotaObligatorio && mascotasDeServicio(item).some(m => !m) && (
+                                      <p className="text-xs text-red-600 mt-1">⚠️ {item.quantity > 1 ? 'Selecciona una mascota para cada unidad del servicio' : 'Debes seleccionar una mascota para este servicio'}</p>
                                     )}
                                   </div>
                                 )}
