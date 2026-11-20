@@ -18,6 +18,7 @@ const { devolverVentaHistorica } = require('../helpers/devolucionVentaHistorica'
 const { validarSincronizacionStockCapas } = require('../helpers/validarSincronizacionStockCapas');
 const { revertirHistorialMedicoYCarnet } = require('../helpers/revertirHistorialMedicoYCarnet');
 const { actualizarHistorialMedicoYCarnet } = require('../helpers/actualizarHistorialMedicoYCarnet');
+const { prepararDosisVenta, sincronizarCarnetVenta } = require('../helpers/carnetVentaEditada');
 const router = express.Router();
 
 // true si ambas listas tienen los mismos artículos (tipo + id) con las mismas cantidades,
@@ -948,6 +949,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
   try {
     const { status, notes, items, total, commission, discount, customer, mascota, amountReceived, change, paymentMethod, saleChannel, employeeDiscountApplied, employeeDiscountPercentage, payments, date, editOperationId, version } = req.body;
+    let unidadesCarnet = null; // vacunas/desparasitantes a reflejar en el carnet al editar
 
     // 1. Recuperar venta original
     const venta = await Venta.findById(req.params.id).session(session);
@@ -1106,6 +1108,14 @@ router.put('/:id', authenticateToken, async (req, res) => {
             }
           }
         }
+
+        // 5.5 Vacunas y desparasitantes: validar mascotas y recalcular la próxima dosis con los días capturados
+        unidadesCarnet = await prepararDosisVenta({
+          items,
+          fechaVenta: (date ? parseCalendarDate(date) : null) || venta.date,
+          customer: customer !== undefined ? customer : venta.customer,
+          session
+        });
 
         // 6. Si se modifican items, procesar FIFO
         if (items) {
@@ -1293,6 +1303,11 @@ router.put('/:id', authenticateToken, async (req, res) => {
     // 12. Guardar venta
     await venta.save({ session });
 
+    // 12.5 Carnet: corregir la próxima dosis de las aplicaciones de esta venta o agregar las que falten
+    if (unidadesCarnet && unidadesCarnet.length) {
+      await sincronizarCarnetVenta({ venta, unidades: unidadesCarnet, customer: venta.customer, session });
+    }
+
     // 13. Commit de la transacción
     await session.commitTransaction();
     session.endSession();
@@ -1309,6 +1324,9 @@ router.put('/:id', authenticateToken, async (req, res) => {
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
+    if (error.httpStatus) {
+      return res.status(error.httpStatus).json({ success: false, message: error.message });
+    }
     console.error(error);
     res.status(500).json({
       success: false,

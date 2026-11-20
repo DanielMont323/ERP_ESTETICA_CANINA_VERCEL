@@ -600,8 +600,26 @@ const Sales = () => {
     try {
       setEditingSale(sale);
       
+      // Categorías de los productos (la venta solo trae el ID): para reconocer vacunas/desparasitantes
+      // (la lista de ventas no siempre trae la categoría del producto: se consulta el producto)
+      const idDe = v => (v && typeof v === 'object' ? v._id : v) || '';
+      const categoriaDe = {};
+      await Promise.all([...new Set(sale.items.filter(it => it.type === 'producto').map(it => String(idDe(it.item))))].map(async pid => {
+        try {
+          const original = sale.items.find(it => String(idDe(it.item)) === pid)?.item;
+          let cat = original && typeof original === 'object' ? original.category : undefined;
+          if (cat === undefined) cat = (await productsAPI.getById(pid)).data.data?.category;
+          if (typeof cat === 'string' && /^[a-f0-9]{24}$/i.test(cat)) {
+            const c = (await productCategoriesAPI.getById(cat)).data.data;
+            cat = c?.name ? { _id: c._id, name: c.name } : cat;
+          }
+          categoriaDe[pid] = cat;
+        } catch (e) { /* sin categoría */ }
+      }));
+
       // Cargar datos de la venta en el formulario de edición
       setEditCart(sale.items.map(item => ({
+        category: item.type === 'producto' ? categoriaDe[String(idDe(item.item))] : undefined,
         item: item.item._id || item.item,
         type: item.type,
         quantity: item.quantity,
@@ -618,7 +636,9 @@ const Sales = () => {
         // Campos de vacunación
         nextDoseDate: item.nextDoseDate || null,
         diasProximaDosis: item.diasProximaDosis || '',
-        aplicaciones: item.aplicaciones || []
+        aplicaciones: (item.aplicaciones && item.aplicaciones.length)
+          ? item.aplicaciones.map(a => ({ mascota: idDe(a.mascota), fechaAplicacion: a.fechaAplicacion, proximaDosis: a.proximaDosis }))
+          : (item.mascota ? Array.from({ length: item.quantity || 1 }, () => ({ mascota: idDe(item.mascota) })) : [])
       })));
       
       // Asegurar que el cliente de la venta esté en el array de clientes
@@ -2663,6 +2683,8 @@ const Sales = () => {
                             const showMascotaSelector = editCustomer && !isVaccine && !isDewormer;
                             const showMascotaObligatorio = isService;
                             const showAplicacionesSelector = (isVaccine || isDewormer) && item.type === 'producto';
+                            const showNextDose = showAplicacionesSelector;
+                            const baseProximaDosis = editSaleDate || editingSale?.date;
 
                             return (
                               <div key={index} className="space-y-2">
@@ -2764,6 +2786,33 @@ const Sales = () => {
                                     </div>
                                     {(!item.aplicaciones || item.aplicaciones.length === 0 || item.aplicaciones.some(a => !a.mascota)) && (
                                       <p className="text-xs text-red-600 mt-1">⚠️ Debes seleccionar una mascota para cada unidad</p>
+                                    )}
+                                  </div>
+                                )}
+                                {showNextDose && (
+                                  <div className="pl-2">
+                                    <label className="text-xs text-gray-600 dark:text-dark-textSecondary">Días para próxima dosis:</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={item.diasProximaDosis || ''}
+                                      onChange={(e) => {
+                                        const newCart = [...editCart];
+                                        newCart[index] = { ...newCart[index], diasProximaDosis: e.target.value };
+                                        setEditCart(newCart);
+                                      }}
+                                      className="form-input text-sm py-1"
+                                      placeholder="Ej: 30"
+                                      aria-label={`Días para próxima dosis de ${item.name}`}
+                                    />
+                                    {item.diasProximaDosis && parseInt(item.diasProximaDosis) > 0 ? (
+                                      <p className="text-xs font-semibold text-brand-burgundy mt-1">
+                                        Próxima dosis: {formatCalendarDate(new Date(new Date(`${String(baseProximaDosis || '').slice(0, 10)}T12:00:00Z`).getTime() + parseInt(item.diasProximaDosis) * 86400000))}. Al guardar se actualiza en el carnet.
+                                      </p>
+                                    ) : (
+                                      <p className="text-xs text-gray-500 dark:text-dark-textSecondary mt-1">
+                                        Sin días: la próxima dosis del carnet no cambia
+                                      </p>
                                     )}
                                   </div>
                                 )}

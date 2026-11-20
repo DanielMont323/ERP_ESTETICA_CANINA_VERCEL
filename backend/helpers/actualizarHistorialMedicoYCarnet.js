@@ -1,8 +1,5 @@
 const Mascota = require('../models/Mascota');
-const CarnetVacunacion = require('../models/CarnetVacunacion');
 const Servicio = require('../models/Servicio');
-const Producto = require('../models/Producto');
-const Cliente = require('../models/Cliente');
 
 /**
  * Función para actualizar historial médico y carnet después de una edición
@@ -49,107 +46,8 @@ async function actualizarHistorialMedicoYCarnet(venta, items, operationId, sessi
       }
     }
 
-    // 2. Identificar productos de vacunas y desparasitantes en los items
-    const vaccineProducts = [];
-    const dewormerProducts = [];
-
-    for (const item of items) {
-      if (item.type === 'producto') {
-        const producto = await Producto.findById(item.item).session(session);
-        if (producto && producto.category) {
-          const categoryLower = String(producto.category).toLowerCase();
-          if (categoryLower === 'vacunas' || categoryLower === 'vacuna') {
-            vaccineProducts.push({
-              producto: producto._id,
-              quantity: item.quantity,
-              mascota: item.mascota || venta.mascota
-            });
-          } else if (categoryLower === 'desparasitantes' || categoryLower === 'desparasitante') {
-            dewormerProducts.push({
-              producto: producto._id,
-              quantity: item.quantity,
-              mascota: item.mascota || venta.mascota
-            });
-          }
-        }
-      }
-    }
-
-    // 3. Crear registros de carnet para vacunas
-    for (const { producto, quantity, mascota } of vaccineProducts) {
-      if (!mascota) continue;
-      
-      const productoDoc = await Producto.findById(producto).session(session);
-      const mascotaDoc = await Mascota.findById(mascota).session(session);
-      const clienteDoc = await Cliente.findById(venta.customer).session(session);
-
-      if (!mascotaDoc || !clienteDoc) continue;
-
-      let carnet = await CarnetVacunacion.findOne({ mascota }).session(session);
-      if (!carnet) {
-        carnet = new CarnetVacunacion({
-          mascota,
-          nombreMascota: mascotaDoc.name,
-          especie: mascotaDoc.type,
-          raza: mascotaDoc.breed,
-          propietario: venta.customer,
-          nombrePropietario: clienteDoc.name,
-          vacunas: []
-        });
-      }
-
-      for (let i = 0; i < quantity; i++) {
-        const vacunaEntry = {
-          vacuna: producto,
-          nombre: productoDoc.name,
-          tipo: 'vacuna',
-          fecha: venta.date,
-          venta: venta._id,
-          replacedBy: null
-        };
-        carnet.vacunas.push(vacunaEntry);
-      }
-
-      await carnet.save({ session });
-    }
-
-    // 4. Crear registros de carnet para desparasitantes
-    for (const { producto, quantity, mascota } of dewormerProducts) {
-      if (!mascota) continue;
-      
-      const productoDoc = await Producto.findById(producto).session(session);
-      const mascotaDoc = await Mascota.findById(mascota).session(session);
-      const clienteDoc = await Cliente.findById(venta.customer).session(session);
-
-      if (!mascotaDoc || !clienteDoc) continue;
-
-      let carnet = await CarnetVacunacion.findOne({ mascota }).session(session);
-      if (!carnet) {
-        carnet = new CarnetVacunacion({
-          mascota,
-          nombreMascota: mascotaDoc.name,
-          especie: mascotaDoc.type,
-          raza: mascotaDoc.breed,
-          propietario: venta.customer,
-          nombrePropietario: clienteDoc.name,
-          vacunas: []
-        });
-      }
-
-      for (let i = 0; i < quantity; i++) {
-        const vacunaEntry = {
-          vacuna: producto,
-          nombre: productoDoc.name,
-          tipo: 'desparasitante',
-          fecha: venta.date,
-          venta: venta._id,
-          replacedBy: null
-        };
-        carnet.vacunas.push(vacunaEntry);
-      }
-
-      await carnet.save({ session });
-    }
+    // 2. Vacunas y desparasitantes: se registran en el carnet con helpers/carnetVentaEditada.js
+    //    (corrige la próxima dosis de las aplicaciones de la venta o agrega las que falten, sin duplicar).
 
     return {
       success: true,
