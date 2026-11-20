@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useKeyboardFormNavigation } from '../hooks/useKeyboardFormNavigation';
-import { salesAPI, productsAPI, servicesAPI, customersAPI, petsAPI, authAPI, remindersAPI } from '../services/api';
+import { salesAPI, productsAPI, servicesAPI, customersAPI, petsAPI, authAPI, remindersAPI, productCategoriesAPI } from '../services/api';
 import { useSearchParams } from 'react-router-dom';
 import { avisarCambioRecordatorios } from '../helpers/alertasRecordatorios';
 import { etiqueta } from '../helpers/etiquetas';
@@ -142,11 +142,19 @@ const Sales = () => {
       toast('Agrega el producto de la dosis: no se encontró en el inventario', { icon: 'ℹ️' });
       return;
     }
-    productsAPI.getById(d.producto).then(r => {
+    productsAPI.getById(d.producto).then(async r => {
       const p = r.data.data;
       if (!p || p.isActive === false) {
         toast('El producto de la dosis anterior ya no está activo; agrégalo manualmente', { icon: 'ℹ️' });
         return;
+      }
+      // La consulta por ID trae la categoría solo como ID: se busca su nombre para que Ventas la reconozca
+      // como vacuna/desparasitante y muestre "Días para próxima dosis" y la mascota.
+      if (typeof p.category === 'string' && /^[a-f0-9]{24}$/i.test(p.category)) {
+        try {
+          const c = (await productCategoriesAPI.getById(p.category)).data.data;
+          if (c?.name) p.category = { _id: c._id, name: c.name };
+        } catch (e) { /* se queda con lo que venía */ }
       }
       setCart(prev => [...prev, {
         item: p._id,
