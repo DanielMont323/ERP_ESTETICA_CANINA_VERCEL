@@ -868,6 +868,13 @@ const Sales = () => {
         quantity: 1,
         unitPrice: item.price,
         name: item.name,
+        // Categoría y datos de vacunación: para que al agregar una vacuna/desparasitante en la edición
+        // aparezcan la mascota por unidad y los días para próxima dosis (igual que en una venta nueva)
+        category: item.category,
+        mascota: '',
+        nextDoseDate: null,
+        diasProximaDosis: '',
+        aplicaciones: type === 'producto' && editPet && /^vacunas?$|desparasitante/i.test(String(item.category?.name || item.category || '')) ? [{ mascota: editPet, fechaAplicacion: new Date().toISOString() }] : [],
         discountType: 'ninguno',
         discountValue: 0,
         discountAmount: 0,
@@ -2811,7 +2818,7 @@ const Sales = () => {
                                       </p>
                                     ) : (
                                       <p className="text-xs text-gray-500 dark:text-dark-textSecondary mt-1">
-                                        Sin días: la próxima dosis del carnet no cambia
+                                        Sin días: no se agenda ni se cambia la próxima dosis
                                       </p>
                                     )}
                                   </div>
