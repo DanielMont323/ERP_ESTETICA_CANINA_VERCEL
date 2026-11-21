@@ -1,6 +1,7 @@
 const InventoryLayer = require('../models/InventoryLayer');
 const InventoryMovement = require('../models/InventoryMovement');
 const Producto = require('../models/Producto');
+const { productoSinStock } = require('./productoSinStock');
 
 // Error de inventario con el estado HTTP que debe recibir el cliente (lo usa la ruta de ventas).
 function fifoError(message, httpStatus) {
@@ -65,6 +66,9 @@ async function consumirFIFOEnVenta(items, ventaId, ventaDate, userId, operationI
     }
 
     // 2. Validar disponibilidad de capas FIFO para cada producto
+    // Productos "sin stock" (categoría Plaquitas): si hay existencias suficientes se descuentan como
+    // siempre; si no, se venden sobre pedido sin tocar el inventario (no se crea movimiento).
+    const sobrePedido = new Set();
     for (const productoId in consumosPorProducto) {
       const cantidadRequerida = consumosPorProducto[productoId];
 
@@ -87,12 +91,18 @@ async function consumirFIFOEnVenta(items, ventaId, ventaDate, userId, operationI
       }
 
       if (totalRemaining < cantidadRequerida) {
+        const soloVentaDirecta = detallesPorProducto[productoId].every(d => d.tipo === 'producto');
+        if (soloVentaDirecta && await productoSinStock(producto, session)) {
+          sobrePedido.add(productoId);
+          continue;
+        }
         throw fifoError(`Stock insuficiente para ${producto.name}. Disponible: ${totalRemaining}, Solicitado: ${cantidadRequerida}`, 400);
       }
     }
 
     // 3. Consumir capas FIFO para cada producto agrupado
     for (const productoId in consumosPorProducto) {
+      if (sobrePedido.has(productoId)) continue;
       const cantidadRequerida = consumosPorProducto[productoId];
       const detalles = detallesPorProducto[productoId];
 
