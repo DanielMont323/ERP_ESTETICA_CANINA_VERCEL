@@ -20,8 +20,10 @@ import {
   X,
   XCircle,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Receipt
 } from 'lucide-react';
+import TicketVentaModal from '../components/TicketVentaModal';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCalendarDate, hoyTepicISO } from '../helpers/dateUtils';
 
@@ -1418,6 +1420,8 @@ const Sales = () => {
 
   // Venta con el detalle de artículos desplegado en la tabla
   const [ventaAbierta, setVentaAbierta] = useState(null);
+  // Venta cuyo ticket se está mostrando (imprimir / PDF / enviar)
+  const [ticketVenta, setTicketVenta] = useState(null);
 
   // Mascotas de la venta (de la venta y de cada servicio), sin repetir
   const nombresMascotas = (sale) => {
@@ -1641,6 +1645,14 @@ const Sales = () => {
                       </td>
                       <td className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="table-actions">
+                          <button
+                            onClick={() => setTicketVenta(sale)}
+                            className="p-1.5 rounded-md text-gray-500 hover:text-brand-burgundy hover:bg-gray-100 dark:hover:bg-dark-hover"
+                            title="Ticket: imprimir, descargar o enviar"
+                            aria-label="Ticket de venta"
+                          >
+                            <Receipt className="h-4 w-4" />
+                          </button>
                           {userRole === 'admin' && sale.status !== 'cancelada' && (
                             <>
                               <button
@@ -1854,6 +1866,13 @@ const Sales = () => {
                     )}
 
                     {/* Actions */}
+                    <button
+                      onClick={() => setTicketVenta(sale)}
+                      className="w-full btn btn-secondary btn-md mt-2"
+                    >
+                      <Receipt className="h-4 w-4 mr-2" />
+                      Ticket (imprimir / enviar)
+                    </button>
                     {userRole === 'admin' && sale.status !== 'cancelada' && (
                       <div className="flex gap-3 pt-2">
                         <button
@@ -3130,6 +3149,7 @@ const Sales = () => {
           </div>
         </div>
       )}
+      {ticketVenta && <TicketVentaModal venta={ticketVenta} onClose={() => setTicketVenta(null)} />}
     </div>
   );
 };

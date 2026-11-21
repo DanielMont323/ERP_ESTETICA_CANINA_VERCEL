@@ -98,6 +98,7 @@ router.get('/', async (req, res) => {
       // Nombre de la mascota para mostrarlo en la lista (venta y servicios)
       .populate('mascota', 'name breed')
       .populate('items.mascota', 'name')
+      .populate('items.aplicaciones.mascota', 'name') // para el ticket: mascota de cada vacuna/desparasitante
       .sort({ date: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
