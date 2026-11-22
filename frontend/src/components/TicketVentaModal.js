@@ -21,13 +21,14 @@ const horaDe = f => {
   return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 };
 
-function datosTicket(venta) {
-  const items = (venta.items || []).map(it => {
+export function datosTicket(venta) {
+  const lineas = (venta.items || []).map(it => {
     const cantidad = Number(it.quantity) || 1;
     const antes = Number(it.subtotalBeforeDiscount) || cantidad * (Number(it.unitPrice) || 0);
     const descuento = Number(it.discountAmount) || 0;
     const proximas = (it.aplicaciones || []).map(a => a.proximaDosis).filter(Boolean);
     return {
+      clave: `${it.type}|${String(it.item?._id || it.item || '')}`,
       nombre: nombreDe(it.item) || (it.type === 'servicio' ? 'Servicio' : 'Producto'),
       cantidad,
       precio: Number(it.unitPrice) || 0,
@@ -36,6 +37,17 @@ function datosTicket(venta) {
       mascota: nombreDe(it.mascota) || [...new Set((it.aplicaciones || []).map(a => nombreDe(a.mascota)).filter(Boolean))].join(', '),
       proximaDosis: proximas.length ? formatCalendarDate(proximas[0]) : (it.nextDoseDate ? formatCalendarDate(it.nextDoseDate) : '')
     };
+  });
+  // Un servicio con cantidad > 1 se guarda como una línea por unidad (una por mascota). En el ticket se juntan
+  // las líneas del mismo artículo y precio: "20 x Transporte Carro" en lugar de veinte "1 x Transporte Carro".
+  const items = [];
+  lineas.forEach(l => {
+    const igual = items.find(i => i.clave === l.clave && i.precio === l.precio && i.proximaDosis === l.proximaDosis);
+    if (!igual) { items.push({ ...l }); return; }
+    igual.cantidad += l.cantidad;
+    igual.importe += l.importe;
+    igual.descuento += l.descuento;
+    igual.mascota = [...new Set([igual.mascota, l.mascota].join(', ').split(', ').filter(Boolean))].join(', ');
   });
   const subtotal = Number(venta.subtotal) || items.reduce((s, i) => s + i.importe, 0);
   const descuento = Number(venta.totalDiscount) || items.reduce((s, i) => s + i.descuento, 0);
