@@ -65,6 +65,26 @@ const separarServiciosPorMascota = (items) => items.flatMap(item => {
   });
 });
 
+// Para mostrar una venta: junta las líneas del mismo artículo y precio (un servicio con cantidad > 1 se guarda
+// como una línea por unidad). "20 × Transporte Carro" en lugar de veinte "1 × Transporte Carro". Solo visual.
+const agruparItemsVenta = (items = []) => {
+  const grupos = [];
+  items.forEach(it => {
+    const clave = `${it.type}|${String(it.item?._id || it.item || '')}|${Number(it.unitPrice) || 0}`;
+    const importe = Number(it.subtotalAfterDiscount ?? it.subtotal ?? (it.quantity || 0) * (it.unitPrice || 0)) || 0;
+    const mascota = it.mascota?.name;
+    const g = grupos.find(x => x.clave === clave);
+    if (g) {
+      g.quantity += Number(it.quantity) || 0;
+      g.importe += importe;
+      if (mascota && !g.mascotas.includes(mascota)) g.mascotas.push(mascota);
+    } else {
+      grupos.push({ clave, item: it.item, type: it.type, unitPrice: it.unitPrice, quantity: Number(it.quantity) || 0, importe, mascotas: mascota ? [mascota] : [] });
+    }
+  });
+  return grupos;
+};
+
 const Sales = () => {
   const { user } = useAuth();
   const [sales, setSales] = useState([]);
@@ -1589,7 +1609,7 @@ const Sales = () => {
               {filteredSales.map((sale) => {
                 const abierta = ventaAbierta === sale._id;
                 const mascotas = nombresMascotas(sale);
-                const articulos = sale.items || [];
+                const articulos = agruparItemsVenta(sale.items);
                 const piezas = articulos.reduce((s, i) => s + (i.quantity || 0), 0);
                 const comisiones = (sale.total || 0) - (sale.netIncome ?? sale.total ?? 0);
                 return (
@@ -1689,10 +1709,10 @@ const Sales = () => {
                                   <tr key={i}>
                                     <td className="py-1 pl-0 pr-3 border-0 text-gray-700 dark:text-dark-text">
                                       {item.item?.name || 'Artículo sin nombre'}
-                                      {item.mascota?.name && <span className="text-xs text-gray-500"> · {item.mascota.name}</span>}
+                                      {item.mascotas.length > 0 && <span className="text-xs text-gray-500"> · {item.mascotas.join(', ')}</span>}
                                     </td>
                                     <td className="py-1 pr-3 border-0 text-right text-gray-500 whitespace-nowrap">{item.quantity} × {formatCurrency(item.unitPrice)}</td>
-                                    <td className="py-1 pr-0 border-0 text-right font-medium whitespace-nowrap">{formatCurrency(item.subtotalAfterDiscount ?? item.subtotal ?? item.quantity * item.unitPrice)}</td>
+                                    <td className="py-1 pr-0 border-0 text-right font-medium whitespace-nowrap">{formatCurrency(item.importe)}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -1755,14 +1775,14 @@ const Sales = () => {
                 <div className="mb-4">
                   <p className="text-xs text-gray-500 dark:text-dark-textSecondary uppercase tracking-wide mb-2">Items</p>
                   <div className="space-y-1">
-                    {sale.items.slice(0, 2).map((item, index) => (
+                    {agruparItemsVenta(sale.items).slice(0, 2).map((item, index) => (
                       <div key={index} className="text-sm text-gray-700 dark:text-dark-text">
-                        {item.quantity}x {item.item.name}
+                        {item.quantity}x {item.item?.name}
                       </div>
                     ))}
-                    {sale.items.length > 2 && (
+                    {agruparItemsVenta(sale.items).length > 2 && (
                       <p className="text-xs text-gray-500 dark:text-dark-textSecondary">
-                        +{sale.items.length - 2} más
+                        +{agruparItemsVenta(sale.items).length - 2} más
                       </p>
                     )}
                   </div>
@@ -1845,10 +1865,10 @@ const Sales = () => {
                     <div>
                       <p className="text-xs text-gray-500 dark:text-dark-textSecondary uppercase tracking-wide mb-2">Todos los items</p>
                       <div className="space-y-2">
-                        {sale.items.map((item, index) => (
+                        {agruparItemsVenta(sale.items).map((item, index) => (
                           <div key={index} className="flex justify-between text-gray-700 dark:text-dark-text py-1 border-b border-gray-100 dark:border-dark-border last:border-0">
-                            <span>{item.quantity}x {item.item.name}</span>
-                            <span className="font-medium">{formatCurrency(item.subtotal)}</span>
+                            <span>{item.quantity}x {item.item?.name}{item.mascotas.length > 0 && <span className="text-xs text-gray-500"> · {item.mascotas.join(', ')}</span>}</span>
+                            <span className="font-medium">{formatCurrency(item.importe)}</span>
                           </div>
                         ))}
                       </div>
