@@ -33,12 +33,19 @@ import { formatCalendarDate, hoyTepicISO } from '../helpers/dateUtils';
 // Productos de la categoría Plaquitas: se venden aunque no haya existencias (sobre pedido).
 const esSinStock = (p) => /^plaquitas?$/i.test(String(p?.category?.name || p?.category || '').trim());
 
-const mascotasDeServicio = (item) =>
-  Array.from({ length: Math.max(1, Number(item.quantity) || 1) }, (_, i) => (i === 0 ? item.mascota : item.mascotasUnidades?.[i]) || '');
+// ¿Se pide una mascota por cada unidad? Sí por omisión (Baño x2 → Bruno e Inoue), salvo el transporte (20 km son
+// un solo servicio para una mascota). La casilla "Una mascota por unidad" del carrito lo cambia (item.porUnidad).
+const pideMascotaPorUnidad = (item) => item.porUnidad ?? !/transporte/i.test(`${item.category?.name || ''} ${item.name || item.item?.name || ''}`);
+
+const mascotasDeServicio = (item) => {
+  const q = Math.max(1, Number(item.quantity) || 1);
+  if (!pideMascotaPorUnidad(item)) return [item.mascota || ''];
+  return Array.from({ length: q }, (_, i) => (i === 0 ? item.mascota : item.mascotasUnidades?.[i]) || '');
+};
 
 const separarServiciosPorMascota = (items) => items.flatMap(item => {
   const q = Number(item.quantity) || 1;
-  if (item.type !== 'servicio' || q <= 1) return [item];
+  if (item.type !== 'servicio' || q <= 1 || !pideMascotaPorUnidad(item)) return [item];
   const r2 = n => Math.round(n * 100) / 100;
   const precio = r2(Number(item.unitPrice) || 0);
   const montoTotal = item.discountType === 'monto' ? r2(Math.min(Number(item.discountValue) || 0, q * precio)) : 0;
@@ -2306,7 +2313,25 @@ const Sales = () => {
                               className={`text-sm py-1 mt-2 ${showMascotaObligatorio ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-blue-300 focus:border-blue-500 focus:ring-blue-500'}`}
                               required={showMascotaObligatorio}
                             />
-                                    {isService && item.quantity > 1 && [...Array(item.quantity - 1)].map((_, k) => (
+                                    {isService && item.quantity > 1 && (
+                                      <label className="mt-2 flex items-start gap-2 text-xs text-gray-700 dark:text-dark-text cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          className="rounded border-gray-300"
+                                          checked={pideMascotaPorUnidad(item)}
+                                          onChange={(e) => {
+                                            const newCart = [...cart];
+                                            newCart[index] = { ...newCart[index], porUnidad: e.target.checked };
+                                            setCart(newCart);
+                                          }}
+                                        />
+                                        <span>
+                                          Una mascota por unidad
+                                          {!pideMascotaPorUnidad(item) && <span className="block text-gray-500">Las {item.quantity} unidades son para la misma mascota</span>}
+                                        </span>
+                                      </label>
+                                    )}
+                                    {isService && item.quantity > 1 && pideMascotaPorUnidad(item) && [...Array(item.quantity - 1)].map((_, k) => (
                                       <div key={k} className="mt-2">
                                         <span className="text-xs font-semibold text-red-800">Mascota {k + 2}:</span>
                                         <Autocomplete
@@ -2329,7 +2354,7 @@ const Sales = () => {
                                       </div>
                                     ))}
                                     {showMascotaObligatorio && mascotasDeServicio(item).some(m => !m) && (
-                                      <p className="text-xs text-red-600 mt-1">⚠️ {item.quantity > 1 ? 'Selecciona una mascota para cada unidad del servicio' : 'Debes seleccionar una mascota para este servicio'}</p>
+                                      <p className="text-xs text-red-600 mt-1">⚠️ {item.quantity > 1 && pideMascotaPorUnidad(item) ? 'Selecciona una mascota para cada unidad del servicio' : 'Debes seleccionar una mascota para este servicio'}</p>
                                     )}
                                   </div>
                                 )}
@@ -2958,7 +2983,25 @@ const Sales = () => {
                                         ))
                                       )}
                                     </select>
-                                    {isService && item.quantity > 1 && [...Array(item.quantity - 1)].map((_, k) => (
+                                    {isService && item.quantity > 1 && (
+                                      <label className="mt-2 flex items-start gap-2 text-xs text-gray-700 dark:text-dark-text cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          className="rounded border-gray-300"
+                                          checked={pideMascotaPorUnidad(item)}
+                                          onChange={(e) => {
+                                            const newCart = [...editCart];
+                                            newCart[index] = { ...newCart[index], porUnidad: e.target.checked };
+                                            setEditCart(newCart);
+                                          }}
+                                        />
+                                        <span>
+                                          Una mascota por unidad
+                                          {!pideMascotaPorUnidad(item) && <span className="block text-gray-500">Las {item.quantity} unidades son para la misma mascota</span>}
+                                        </span>
+                                      </label>
+                                    )}
+                                    {isService && item.quantity > 1 && pideMascotaPorUnidad(item) && [...Array(item.quantity - 1)].map((_, k) => (
                                       <div key={k} className="mt-2">
                                         <span className="text-xs font-semibold text-red-800">Mascota {k + 2}:</span>
                                         <select
@@ -2981,7 +3024,7 @@ const Sales = () => {
                                       </div>
                                     ))}
                                     {showMascotaObligatorio && mascotasDeServicio(item).some(m => !m) && (
-                                      <p className="text-xs text-red-600 mt-1">⚠️ {item.quantity > 1 ? 'Selecciona una mascota para cada unidad del servicio' : 'Debes seleccionar una mascota para este servicio'}</p>
+                                      <p className="text-xs text-red-600 mt-1">⚠️ {item.quantity > 1 && pideMascotaPorUnidad(item) ? 'Selecciona una mascota para cada unidad del servicio' : 'Debes seleccionar una mascota para este servicio'}</p>
                                     )}
                                   </div>
                                 )}
