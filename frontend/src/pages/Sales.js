@@ -30,9 +30,6 @@ import { formatCalendarDate, hoyTepicISO } from '../helpers/dateUtils';
 // Servicio con cantidad > 1 (ej. "Baño x2"): una mascota por unidad. La unidad 1 usa item.mascota y las
 // demás item.mascotasUnidades[i]. Al guardar se registra una línea por mascota (igual que agregar el servicio
 // varias veces), así el historial médico y los reportes siguen funcionando sin cambios en el servidor.
-// Productos de la categoría Plaquitas: se venden aunque no haya existencias (sobre pedido).
-const esSinStock = (p) => /^plaquitas?$/i.test(String(p?.category?.name || p?.category || '').trim());
-
 // ¿Se pide una mascota por cada unidad? Sí por omisión (Baño x2 → Bruno e Inoue), salvo el transporte (20 km son
 // un solo servicio para una mascota). La casilla "Una mascota por unidad" del carrito lo cambia (item.porUnidad).
 const pideMascotaPorUnidad = (item) => item.porUnidad ?? !/transporte/i.test(`${item.category?.name || ''} ${item.name || item.item?.name || ''}`);
@@ -2097,7 +2094,7 @@ const Sales = () => {
                                 <p className="font-medium text-gray-900 dark:text-dark-text">{item.name}</p>
                               </div>
                               {item.type === 'producto' && (
-                                <p className="text-sm text-gray-500 dark:text-dark-textSecondary">SKU: {item.sku} - {esSinStock(item) && item.stock <= 0 ? 'Sobre pedido (no requiere stock)' : `Stock: ${item.stock}`}</p>
+                                <p className="text-sm text-gray-500 dark:text-dark-textSecondary">SKU: {item.sku} - Stock: {item.stock}</p>
                               )}
                               {item.type === 'servicio' && (
                                 <p className="text-sm text-gray-500 dark:text-dark-textSecondary">{item.duration} min</p>
@@ -2115,12 +2112,12 @@ const Sales = () => {
                     <div>
                       <h4 className="font-medium text-gray-900 dark:text-dark-text mb-3">Productos</h4>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
-                        {products.filter(p => p.stock > 0 || esSinStock(p)).map(product => (
+                        {products.filter(p => p.stock > 0).map(product => (
                           <div key={product._id} className="border border-gray-200 dark:border-dark-border rounded-xl p-3 hover:border-primary-300 hover:shadow-sm transition-all duration-200">
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
                                 <p className="font-medium text-gray-900 dark:text-dark-text">{product.name}</p>
-                                <p className="text-sm text-gray-500 dark:text-dark-textSecondary">{esSinStock(product) && product.stock <= 0 ? 'Sobre pedido (no requiere stock)' : `Stock: ${product.stock}`}</p>
+                                <p className="text-sm text-gray-500 dark:text-dark-textSecondary">Stock: {product.stock}</p>
                                 <p className="text-sm font-medium text-brand-burgundy">
                                   {formatCurrency(product.price)}
                                 </p>
@@ -2733,7 +2730,7 @@ const Sales = () => {
                                 <p className="font-medium text-gray-900 dark:text-dark-text">{item.name}</p>
                               </div>
                               {item.type === 'producto' && (
-                                <p className="text-sm text-gray-500 dark:text-dark-textSecondary">SKU: {item.sku} - {esSinStock(item) && item.stock <= 0 ? 'Sobre pedido (no requiere stock)' : `Stock: ${item.stock}`}</p>
+                                <p className="text-sm text-gray-500 dark:text-dark-textSecondary">SKU: {item.sku} - Stock: {item.stock}</p>
                               )}
                               {item.type === 'servicio' && (
                                 <p className="text-sm text-gray-500 dark:text-dark-textSecondary">{item.duration} min</p>
@@ -2751,12 +2748,12 @@ const Sales = () => {
                     <div>
                       <h4 className="font-medium text-gray-900 dark:text-dark-text mb-3">Productos</h4>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
-                        {products.filter(p => p.stock > 0 || esSinStock(p)).map(product => (
+                        {products.filter(p => p.stock > 0).map(product => (
                           <div key={product._id} className="border border-gray-200 dark:border-dark-border rounded-xl p-3 hover:border-primary-300 hover:shadow-sm transition-all duration-200">
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
                                 <p className="font-medium text-gray-900 dark:text-dark-text">{product.name}</p>
-                                <p className="text-sm text-gray-500 dark:text-dark-textSecondary">{esSinStock(product) && product.stock <= 0 ? 'Sobre pedido (no requiere stock)' : `Stock: ${product.stock}`}</p>
+                                <p className="text-sm text-gray-500 dark:text-dark-textSecondary">Stock: {product.stock}</p>
                                 <p className="text-sm font-medium text-brand-burgundy">
                                   {formatCurrency(product.price)}
                                 </p>

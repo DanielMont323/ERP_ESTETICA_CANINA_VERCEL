@@ -21,7 +21,6 @@ const Costo = require('../models/Costo');
 const Producto = require('../models/Producto');
 const InventoryMovement = require('../models/InventoryMovement');
 const { toGMT7 } = require('./timezone');
-const { productoSinStock } = require('./productoSinStock');
 
 const r2 = n => Math.round((n || 0) * 100) / 100;
 const pct = (a, b) => (b > 0 ? r2((a / b) * 100) : 0);
@@ -106,16 +105,13 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
   // Costo actual de productos para estimar ventas anteriores a FIFO
   const idsProducto = new Set();
   for (const v of ventas) for (const it of v.items || []) if (it.type === 'producto' && it.item) idsProducto.add(String(it.item));
-  const productosVendidos = await Producto.find({ _id: { $in: [...idsProducto] } }).select('cost category').lean();
-  const costoActual = new Map(productosVendidos.map(p => [String(p._id), p.cost || 0]));
-  // Plaquitas vendidas sobre pedido (sin existencias): no tienen salida FIFO; su costo es el del producto.
-  const sinStock = new Set();
-  for (const p of productosVendidos) if (await productoSinStock(p)) sinStock.add(String(p._id));
+  const costoActual = new Map((await Producto.find({ _id: { $in: [...idsProducto] } }).select('cost').lean())
+    .map(p => [String(p._id), p.cost || 0]));
 
   const t = {
     ventasProductos: 0, ventasServicios: 0, total: 0, comisionTarjeta: 0, otrasComisiones: 0, ingresoNeto: 0,
     costoVerificado: 0, costoEstimado: 0, insumosServicios: 0, serviciosExternos: 0,
-    lineasVerificadas: 0, lineasEstimadas: 0, lineasSobrePedido: 0, lineasSinCosto: 0,
+    lineasVerificadas: 0, lineasEstimadas: 0, lineasSinCosto: 0,
     ventasFifo: 0, ventasHistoricas: 0
   };
 
@@ -164,8 +160,7 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
       const unitario = costoActual.get(String(it.item)) || 0;
       if (unitario > 0) {
         t.costoEstimado += unitario * (it.quantity || 0);
-        if (v.fifoTracked && sinStock.has(String(it.item))) t.lineasSobrePedido += 1;
-        else t.lineasEstimadas += 1;
+        t.lineasEstimadas += 1;
       } else {
         t.lineasSinCosto += 1;
       }
@@ -266,7 +261,6 @@ async function calcularRentabilidad(rango, ahora = new Date()) {
       ventasHistoricas: t.ventasHistoricas,
       lineasVerificadas: t.lineasVerificadas,
       lineasEstimadas: t.lineasEstimadas,
-      lineasSobrePedido: t.lineasSobrePedido,
       lineasSinCosto: t.lineasSinCosto,
       pctCostoVerificado: pct(t.costoVerificado, costoProductos),
       notas
