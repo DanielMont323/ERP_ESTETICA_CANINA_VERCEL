@@ -225,9 +225,32 @@ router.get('/:id', async (req, res) => {
 
 // @route   POST /api/ventas
 // @desc    Crear nueva venta
+// Anticipo recibido antes de la venta: { monto, nota }. Devuelve null si no hay (monto vacío o 0).
+function leerAnticipo(anticipo) {
+  if (anticipo === undefined || anticipo === null || anticipo === '') return null;
+  const monto = Math.round(Number(anticipo.monto) * 100) / 100;
+  if (!Number.isFinite(monto) || monto < 0) {
+    const e = new Error('El anticipo debe ser un monto positivo');
+    e.httpStatus = 400;
+    throw e;
+  }
+  if (monto === 0) return null;
+  const nota = String(anticipo.nota || '').trim();
+  return nota ? { monto, nota } : { monto };
+}
+
+// Lo que se cobra en esta venta: el total menos el anticipo
+const porCobrarDe = (venta) => Math.round(((venta.total || 0) - (venta.anticipo?.monto || 0)) * 100) / 100;
+
 router.post('/', authenticateToken, async (req, res) => {
   try {
     const { items, paymentMethod, payments, customer, mascota, notes, amountReceived, saleChannel, commission, subtotal, total, netIncome, date, manualFinancials, employeeDiscountApplied, employeeDiscountPercentage } = req.body;
+    let anticipo;
+    try {
+      anticipo = leerAnticipo(req.body.anticipo);
+    } catch (e) {
+      return res.status(e.httpStatus || 400).json({ success: false, message: e.message });
+    }
 
     console.log('DEBUG req.body.employeeDiscountApplied:', employeeDiscountApplied);
     console.log('DEBUG req.body.employeeDiscountPercentage:', employeeDiscountPercentage);
@@ -592,6 +615,7 @@ router.post('/', authenticateToken, async (req, res) => {
         user,
         notes,
         commission,
+        ...(anticipo && { anticipo }),
         status: 'completada',
         fifoTracked: true,
         ...(date && { date: new Date(date) }),
@@ -604,7 +628,18 @@ router.post('/', authenticateToken, async (req, res) => {
       }], { session });
       ventaDoc = venta[0];
 
-      // 5.5. Validar que los pagos coincidan con el total (si se usó payments[])
+      // 5.4. El anticipo no puede ser mayor que el total; los pagos cubren solo el resto
+      const porCobrar = porCobrarDe(ventaDoc);
+      if (porCobrar < -0.01) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({
+          success: false,
+          message: `El anticipo ($${ventaDoc.anticipo.monto.toFixed(2)}) es mayor que el total de la venta ($${ventaDoc.total.toFixed(2)})`
+        });
+      }
+
+      // 5.5. Validar que los pagos coincidan con lo que falta por cobrar (total - anticipo)
       if (effectivePayments.length > 0) {
         const totalPayments = effectivePayments.reduce((sum, p) => sum + (p.amount || 0), 0);
         const tolerance = 0.01;
@@ -612,8 +647,8 @@ router.post('/', authenticateToken, async (req, res) => {
         const hasCashPayment = effectivePayments.some(p => p.method === 'efectivo');
 
         if (hasCashPayment) {
-          if (totalPayments < ventaDoc.total - tolerance) {
-            const missing = ventaDoc.total - totalPayments;
+          if (totalPayments < porCobrar - tolerance) {
+            const missing = porCobrar - totalPayments;
             await session.abortTransaction();
             session.endSession();
             return res.status(400).json({
@@ -622,12 +657,14 @@ router.post('/', authenticateToken, async (req, res) => {
             });
           }
         } else {
-          if (Math.abs(totalPayments - ventaDoc.total) > tolerance) {
+          if (Math.abs(totalPayments - porCobrar) > tolerance) {
             await session.abortTransaction();
             session.endSession();
             return res.status(400).json({
               success: false,
-              message: `La suma de pagos ($${totalPayments.toFixed(2)}) no coincide con el total de la venta ($${ventaDoc.total.toFixed(2)})`
+              message: ventaDoc.anticipo
+                ? `La suma de pagos ($${totalPayments.toFixed(2)}) no coincide con lo que falta por pagar ($${porCobrar.toFixed(2)}: total menos anticipo)`
+                : `La suma de pagos ($${totalPayments.toFixed(2)}) no coincide con el total de la venta ($${ventaDoc.total.toFixed(2)})`
             });
           }
         }
@@ -637,7 +674,7 @@ router.post('/', authenticateToken, async (req, res) => {
           const totalCash = cashPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
           const nonCashTotal = effectivePayments.filter(p => p.method !== 'efectivo').reduce((sum, p) => sum + (p.amount || 0), 0);
 
-          const cashRequired = ventaDoc.total - nonCashTotal;
+          const cashRequired = porCobrar - nonCashTotal;
           const calculatedChange = Math.round((totalCash - cashRequired) * 100) / 100;
 
           if (calculatedChange >= 0) {
@@ -650,7 +687,7 @@ router.post('/', authenticateToken, async (req, res) => {
 
       // 6. Calcular y validar cambio para efectivo (compatibilidad con ventas antiguas)
       if (!payments && effectivePaymentMethod === 'efectivo' && amountReceived) {
-        const calculatedChange = Math.round((amountReceived - ventaDoc.total) * 100) / 100;
+        const calculatedChange = Math.round((amountReceived - porCobrar) * 100) / 100;
 
         if (calculatedChange < 0) {
           await session.abortTransaction();
@@ -1017,7 +1054,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
     }
 
     // Campos sensibles que solo admin puede modificar
-    const sensitiveFields = ['items', 'total', 'commission', 'discount', 'customer', 'mascota', 'amountReceived', 'change', 'paymentMethod', 'saleChannel', 'employeeDiscountApplied', 'employeeDiscountPercentage', 'payments', 'date'];
+    const sensitiveFields = ['items', 'total', 'commission', 'discount', 'customer', 'mascota', 'amountReceived', 'change', 'paymentMethod', 'saleChannel', 'employeeDiscountApplied', 'employeeDiscountPercentage', 'payments', 'date', 'anticipo'];
     const hasSensitiveFields = sensitiveFields.some(field => req.body[field] !== undefined);
 
     if (hasSensitiveFields) {
@@ -1212,6 +1249,21 @@ router.put('/:id', authenticateToken, async (req, res) => {
       if (total !== undefined) venta.total = total;
       if (commission !== undefined) venta.commission = commission;
       if (discount !== undefined) venta.discount = discount;
+
+      // Anticipo: se puede agregar, cambiar o quitar (null / 0) al editar
+      if (req.body.anticipo !== undefined) {
+        const anticipo = leerAnticipo(req.body.anticipo);
+        venta.anticipo = anticipo || undefined;
+      }
+      const porCobrar = porCobrarDe(venta);
+      if (porCobrar < -0.01) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({
+          success: false,
+          message: `El anticipo ($${venta.anticipo.monto.toFixed(2)}) es mayor que el total de la venta ($${venta.total.toFixed(2)})`
+        });
+      }
       
       // Validar payments[] si se envía
       if (payments !== undefined && payments.length > 0) {
@@ -1244,8 +1296,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
         
         if (hasCashPayment) {
           // Con efectivo, permitir sobrepago (el excedente será el cambio)
-          if (totalPayments < venta.total - tolerance) {
-            const missing = venta.total - totalPayments;
+          if (totalPayments < porCobrar - tolerance) {
+            const missing = porCobrar - totalPayments;
             await session.abortTransaction();
             session.endSession();
             return res.status(400).json({
@@ -1255,12 +1307,14 @@ router.put('/:id', authenticateToken, async (req, res) => {
           }
         } else {
           // Sin efectivo, el pago debe ser exacto
-          if (Math.abs(totalPayments - venta.total) > tolerance) {
+          if (Math.abs(totalPayments - porCobrar) > tolerance) {
             await session.abortTransaction();
             session.endSession();
             return res.status(400).json({
               success: false,
-              message: `La suma de pagos ($${totalPayments.toFixed(2)}) no coincide con el total de la venta ($${venta.total.toFixed(2)})`
+              message: venta.anticipo
+                ? `La suma de pagos ($${totalPayments.toFixed(2)}) no coincide con lo que falta por pagar ($${porCobrar.toFixed(2)}: total menos anticipo)`
+                : `La suma de pagos ($${totalPayments.toFixed(2)}) no coincide con el total de la venta ($${venta.total.toFixed(2)})`
             });
           }
         }
@@ -1275,7 +1329,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
           const nonCashTotal = payments.filter(p => p.method !== 'efectivo').reduce((sum, p) => sum + (p.amount || 0), 0);
           
           // El cambio es el excedente de efectivo sobre lo que corresponde pagar
-          const cashRequired = venta.total - nonCashTotal;
+          const cashRequired = porCobrar - nonCashTotal;
           const calculatedChange = Math.round((totalCash - cashRequired) * 100) / 100;
           
           if (calculatedChange >= 0) {

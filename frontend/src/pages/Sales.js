@@ -89,6 +89,46 @@ const agruparItemsVenta = (items = []) => {
   return grupos;
 };
 
+// Anticipo que el cliente dio antes de la venta: no cambia el total, solo lo que se cobra hoy.
+const montoAnticipo = (v) => Math.max(0, Math.round((parseFloat(v) || 0) * 100) / 100);
+
+// Bloque del formulario para capturar el anticipo (venta nueva y edición)
+const CampoAnticipo = ({ monto, nota, onMonto, onNota, total }) => {
+  const valor = montoAnticipo(monto);
+  return (
+    <div className="border border-amber-200 bg-amber-50 dark:bg-dark-card dark:border-dark-border rounded-xl p-3 space-y-2">
+      <label className="form-label mb-0">Anticipo recibido antes (opcional)</label>
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        value={monto}
+        onChange={(e) => onMonto(e.target.value)}
+        placeholder="Monto del anticipo"
+        className="form-input"
+      />
+      {valor > 0 && (
+        <>
+          <input
+            type="text"
+            value={nota}
+            onChange={(e) => onNota(e.target.value)}
+            placeholder="Nota (ej. lo dio el 20/11 en efectivo)"
+            className="form-input"
+          />
+          {valor > total + 0.01 ? (
+            <p className="text-xs text-red-600">El anticipo es mayor que el total de la venta</p>
+          ) : (
+            <p className="text-sm font-medium text-gray-800 dark:text-dark-text">
+              Por pagar hoy: {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Math.round((total - valor) * 100) / 100)}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
 const Sales = () => {
   const { user } = useAuth();
   const [sales, setSales] = useState([]);
@@ -141,6 +181,10 @@ const Sales = () => {
   const [useCustomCommission, setUseCustomCommission] = useState(false);
   const [notes, setNotes] = useState('');
   const [editNotes, setEditNotes] = useState('');
+  const [anticipo, setAnticipo] = useState('');
+  const [anticipoNota, setAnticipoNota] = useState('');
+  const [editAnticipo, setEditAnticipo] = useState('');
+  const [editAnticipoNota, setEditAnticipoNota] = useState('');
   const [amountReceived, setAmountReceived] = useState('');
   const [editAmountReceived, setEditAmountReceived] = useState('');
   const [saleDate, setSaleDate] = useState('');
@@ -502,9 +546,9 @@ const Sales = () => {
       const total = employeeDiscountApplied
         ? cart.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * 0.80
         : cart.reduce((sum, item) => sum + (item.subtotalAfterDiscount ?? (item.quantity * item.unitPrice)), 0);
-      setPayments([{ method: 'efectivo', amount: Math.round(total * 100) / 100 }]);
+      setPayments([{ method: 'efectivo', amount: Math.max(0, Math.round((total - montoAnticipo(anticipo)) * 100) / 100) }]);
     }
-  }, [cart, employeeDiscountApplied]);
+  }, [cart, employeeDiscountApplied, anticipo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sincronizar pagos con el total del carrito en modo edición
   useEffect(() => {
@@ -514,9 +558,9 @@ const Sales = () => {
       const total = editEmployeeDiscountApplied
         ? editCart.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * 0.80
         : editCart.reduce((sum, item) => sum + (item.subtotalAfterDiscount ?? (item.quantity * item.unitPrice)), 0);
-      setEditPayments([{ method: 'efectivo', amount: Math.round(total * 100) / 100 }]);
+      setEditPayments([{ method: 'efectivo', amount: Math.max(0, Math.round((total - montoAnticipo(editAnticipo)) * 100) / 100) }]);
     }
-  }, [editCart, editEmployeeDiscountApplied]);
+  }, [editCart, editEmployeeDiscountApplied, editAnticipo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Manejo de teclas para navegación por teclado en buscador
   const handleSearchKeyDown = async (e) => {
@@ -715,6 +759,8 @@ const Sales = () => {
       setEditPaymentMethod(sale.paymentMethod || 'efectivo');
       setEditSaleChannel(sale.saleChannel || 'local');
       setEditNotes(sale.notes || '');
+      setEditAnticipo(sale.anticipo?.monto ? String(sale.anticipo.monto) : '');
+      setEditAnticipoNota(sale.anticipo?.nota || '');
       setEditAmountReceived(sale.amountReceived?.toString() || '');
       setEditEmployeeDiscountApplied(sale.employeeDiscountApplied || false);
       
@@ -791,10 +837,16 @@ const Sales = () => {
     const totalDiscount = editEmployeeDiscountApplied
       ? Math.round((subtotal * 0.20) * 100) / 100
       : editCart.reduce((sum, item) => sum + (item.discountAmount ?? 0), 0);
-    const total = editEmployeeDiscountApplied
+    const totalVenta = editEmployeeDiscountApplied
       ? Math.round((subtotal * 0.80) * 100) / 100
       : editCart.reduce((sum, item) => sum + (item.subtotalAfterDiscount ?? (item.quantity * item.unitPrice)), 0);
     const tolerance = 0.01;
+    if (montoAnticipo(editAnticipo) > totalVenta + tolerance) {
+      toast.error('El anticipo es mayor que el total de la venta');
+      return;
+    }
+    // Los pagos cubren solo lo que falta (total - anticipo)
+    const total = Math.round((totalVenta - montoAnticipo(editAnticipo)) * 100) / 100;
     
     // Verificar si hay pagos en efectivo
     const hasCashPayment = editPayments.some(p => p.method === 'efectivo');
@@ -851,6 +903,7 @@ const Sales = () => {
         mascota: editPet || null,
         saleChannel: editSaleChannel,
         notes: editNotes,
+        anticipo: montoAnticipo(editAnticipo) > 0 ? { monto: montoAnticipo(editAnticipo), nota: editAnticipoNota } : null,
         ...(editSaleDate && { date: editSaleDate })
       };
 
@@ -876,6 +929,8 @@ const Sales = () => {
     setEditPaymentMethod('efectivo');
     setEditSaleChannel('local');
     setEditNotes('');
+    setEditAnticipo('');
+    setEditAnticipoNota('');
     setEditAmountReceived('');
     setEditSearchQuery('');
     setEditSearchResults([]);
@@ -1309,8 +1364,13 @@ const Sales = () => {
 
     // Validar pagos
     const totalPayments = payments.reduce((sum, p) => sum + p.amount, 0);
-    const total = calculateTotal();
     const tolerance = 0.01;
+    if (montoAnticipo(anticipo) > calculateTotal() + tolerance) {
+      toast.error('El anticipo es mayor que el total de la venta');
+      return;
+    }
+    // Los pagos cubren solo lo que falta (total - anticipo)
+    const total = Math.round((calculateTotal() - montoAnticipo(anticipo)) * 100) / 100;
     
     // Verificar si hay pagos en efectivo
     const hasCashPayment = payments.some(p => p.method === 'efectivo');
@@ -1361,6 +1421,7 @@ const Sales = () => {
         saleChannel,
         customer: selectedCustomer?._id || null,
         notes,
+        ...(montoAnticipo(anticipo) > 0 && { anticipo: { monto: montoAnticipo(anticipo), nota: anticipoNota } }),
         user: user?._id || null
       };
 
@@ -1423,6 +1484,8 @@ const Sales = () => {
       setCustomCommission('');
       setUseCustomCommission(false);
       setNotes('');
+      setAnticipo('');
+      setAnticipoNota('');
       setAmountReceived('');
       setSaleDate('');
       setSearchQuery('');
@@ -1723,6 +1786,7 @@ const Sales = () => {
                             </table>
                             <p className="mt-2 text-xs text-gray-500 dark:text-dark-textSecondary">
                               Atendió: {sale.user ? sale.user.name : 'Sin vendedor registrado'}
+                              {sale.anticipo?.monto > 0 && <> · Anticipo {formatCurrency(sale.anticipo.monto)}{sale.anticipo.nota ? ` (${sale.anticipo.nota})` : ''}</>}
                               {sale.cardCommission > 0 && <> · Comisión de tarjeta {formatCurrency(sale.cardCommission)}</>}
                               {sale.notes && <> · Nota: {sale.notes}</>}
                             </p>
@@ -2455,6 +2519,14 @@ const Sales = () => {
                       </div>
                     </div>
 
+                    <CampoAnticipo
+                      monto={anticipo}
+                      nota={anticipoNota}
+                      onMonto={setAnticipo}
+                      onNota={setAnticipoNota}
+                      total={calculateTotal()}
+                    />
+
                     {/* Multiple Payments */}
                     <div>
                       <label className="form-label">Pagos</label>
@@ -2515,7 +2587,7 @@ const Sales = () => {
                             {(() => {
                               const totalCash = payments.filter(p => p.method === 'efectivo').reduce((sum, p) => sum + (p.amount || 0), 0);
                               const nonCashTotal = payments.filter(p => p.method !== 'efectivo').reduce((sum, p) => sum + (p.amount || 0), 0);
-                              const cashRequired = calculateTotal() - nonCashTotal;
+                              const cashRequired = calculateTotal() - montoAnticipo(anticipo) - nonCashTotal;
                               const change = totalCash - cashRequired;
                               return formatCurrency(Math.max(0, change));
                             })()}
@@ -3067,6 +3139,16 @@ const Sales = () => {
                       </div>
                     </div>
 
+                    <CampoAnticipo
+                      monto={editAnticipo}
+                      nota={editAnticipoNota}
+                      onMonto={setEditAnticipo}
+                      onNota={setEditAnticipoNota}
+                      total={(editEmployeeDiscountApplied
+                        ? Math.round((editCart.reduce((sum, item) => sum + (item.subtotalBeforeDiscount || (item.quantity * item.unitPrice)), 0) * 0.80) * 100) / 100
+                        : editCart.reduce((sum, item) => sum + (item.subtotalAfterDiscount ?? (item.quantity * item.unitPrice)), 0))}
+                    />
+
                     {/* Multiple Payments in Edit */}
                     <div>
                       <label className="form-label">Pagos</label>
@@ -3122,8 +3204,8 @@ const Sales = () => {
                             const total = editEmployeeDiscountApplied
                               ? editCart.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * 0.80
                               : editCart.reduce((sum, item) => sum + (item.subtotalAfterDiscount ?? (item.quantity * item.unitPrice)), 0);
-                            setEditPayments([{ method: 'efectivo', amount: Math.round(total * 100) / 100 }]);
-                            toast.success('Pagos ajustados al total actual');
+                            setEditPayments([{ method: 'efectivo', amount: Math.max(0, Math.round((total - montoAnticipo(editAnticipo)) * 100) / 100) }]);
+                            toast.success(montoAnticipo(editAnticipo) > 0 ? 'Pagos ajustados a lo que falta por pagar' : 'Pagos ajustados al total actual');
                           }}
                           className="text-sm text-blue-600 hover:text-blue-800 underline"
                         >
@@ -3142,7 +3224,7 @@ const Sales = () => {
                               const totalCash = editPayments.filter(p => p.method === 'efectivo').reduce((sum, p) => sum + (p.amount || 0), 0);
                               const nonCashTotal = editPayments.filter(p => p.method !== 'efectivo').reduce((sum, p) => sum + (p.amount || 0), 0);
                               const total = editCart.reduce((sum, item) => sum + (item.subtotalAfterDiscount ?? (item.quantity * item.unitPrice)), 0);
-                              const cashRequired = total - nonCashTotal;
+                              const cashRequired = total - montoAnticipo(editAnticipo) - nonCashTotal;
                               const change = totalCash - cashRequired;
                               return formatCurrency(Math.max(0, change));
                             })()}

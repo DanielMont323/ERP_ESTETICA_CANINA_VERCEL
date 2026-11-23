@@ -66,6 +66,9 @@ export function datosTicket(venta) {
     pagos: (venta.payments && venta.payments.length ? venta.payments : [{ method: venta.paymentMethod, amount: venta.total }])
       .map(p => ({ metodo: METODO[p.method] || p.method || 'Pago', monto: Number(p.amount) || 0 })),
     cambio: Number(venta.change) || 0,
+    // Anticipo que el cliente dio antes: el total no cambia, los pagos de hoy cubren el resto
+    anticipo: Number(venta.anticipo?.monto) || 0,
+    anticipoNota: venta.anticipo?.nota || '',
     cancelada: venta.status === 'cancelada',
     notas: venta.notes || ''
   };
@@ -167,6 +170,11 @@ function dibujar(pdf, t, logo, ancho) {
   fila('Subtotal', dinero(t.subtotal));
   if (t.descuento > 0) fila(t.descuentoEmpleado ? 'Descuento (20%)' : 'Descuento', `-${dinero(t.descuento)}`);
   fila('TOTAL', dinero(t.total), { size: 11, bold: true });
+  if (t.anticipo > 0) {
+    fila('Anticipo', `-${dinero(t.anticipo)}`);
+    if (t.anticipoNota) texto(`   ${t.anticipoNota}`, { size: 7 });
+    fila('Por pagar hoy', dinero(Math.max(0, t.total - t.anticipo)), { bold: true });
+  }
   y += 1;
   t.pagos.forEach(p => fila(p.metodo, dinero(p.monto)));
   if (t.cambio > 0) fila('Cambio', dinero(t.cambio));
@@ -280,6 +288,13 @@ const TicketVentaModal = ({ venta, onClose }) => {
             <div className="flex justify-between"><span>Subtotal</span><span>{dinero(t.subtotal)}</span></div>
             {t.descuento > 0 && <div className="flex justify-between"><span>{t.descuentoEmpleado ? 'Descuento (20%)' : 'Descuento'}</span><span>-{dinero(t.descuento)}</span></div>}
             <div className="flex justify-between font-bold text-sm"><span>TOTAL</span><span>{dinero(t.total)}</span></div>
+            {t.anticipo > 0 && (
+              <>
+                <div className="flex justify-between"><span>Anticipo</span><span>-{dinero(t.anticipo)}</span></div>
+                {t.anticipoNota && <p className="pl-3 text-[11px]">{t.anticipoNota}</p>}
+                <div className="flex justify-between font-bold"><span>Por pagar hoy</span><span>{dinero(Math.max(0, t.total - t.anticipo))}</span></div>
+              </>
+            )}
             {t.pagos.map((p, k) => <div key={k} className="flex justify-between"><span>{p.metodo}</span><span>{dinero(p.monto)}</span></div>)}
             {t.cambio > 0 && <div className="flex justify-between"><span>Cambio</span><span>{dinero(t.cambio)}</span></div>}
             {t.notas && (<><hr className="border-dashed border-gray-400 my-2" /><p className="text-[11px]">Notas: {t.notas}</p></>)}

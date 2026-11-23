@@ -24,6 +24,12 @@ test('junta las unidades del mismo servicio en una sola línea', () => {
   expect(t.items[1]).toMatchObject({ nombre: 'Baño pelo corto', cantidad: 2, importe: 400, descuento: 20, mascota: 'Bruno, Inoue' });
 });
 
+test('el anticipo sale en el ticket y el total no cambia', () => {
+  const t = datosTicket({ _id: 'x', items: [linea(transporte, 500, null)], subtotal: 500, total: 500, anticipo: { monto: 200, nota: 'Dio el 20/11' }, payments: [{ method: 'efectivo', amount: 300 }] });
+  expect(t).toMatchObject({ total: 500, anticipo: 200, anticipoNota: 'Dio el 20/11' });
+  expect(t.pagos).toEqual([{ metodo: 'Efectivo', monto: 300 }]);
+});
+
 test('no junta el mismo artículo con distinto precio', () => {
   const t = datosTicket({ _id: 'x', items: [linea(transporte, 10, null), linea(transporte, 12, null)] });
   expect(t.items.map(i => i.cantidad)).toEqual([1, 1]);

@@ -169,6 +169,15 @@ const ventaSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Mascota'
   },
+  // Anticipo que el cliente dio antes de esta venta (autorizado 2026-11-22). No cambia el total:
+  // los pagos de la venta solo cubren el resto (total - anticipo). Las ventas anteriores no lo tienen.
+  anticipo: {
+    type: new mongoose.Schema({
+      monto: { type: Number, required: true, min: 0 },
+      nota: { type: String, trim: true }
+    }, { _id: false }),
+    default: undefined
+  },
   amountReceived: {
     type: Number,
     min: 0
