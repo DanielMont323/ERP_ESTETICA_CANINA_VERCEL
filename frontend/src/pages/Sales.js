@@ -140,7 +140,6 @@ const Sales = () => {
   });
   const [products, setProducts] = useState([]);
   const [services, setServices] = useState([]);
-  const [customers, setCustomers] = useState([]);
   const [pets, setPets] = useState([]);
   const [users, setUsers] = useState([]);
   const [selectedSeller, setSelectedSeller] = useState('');
@@ -327,7 +326,6 @@ const Sales = () => {
   useEffect(() => {
     fetchProducts();
     fetchServices();
-    fetchCustomers();
     fetchUsers();
   }, []);
 
@@ -391,15 +389,6 @@ const Sales = () => {
       setServices(response.data.data);
     } catch (error) {
       console.error('Error fetching services:', error);
-    }
-  };
-
-  const fetchCustomers = async () => {
-    try {
-      const response = await customersAPI.getAll({});
-      setCustomers(response.data.data);
-    } catch (error) {
-      console.error('Error fetching customers:', error);
     }
   };
 
@@ -748,11 +737,6 @@ const Sales = () => {
           ? item.aplicaciones.map(a => ({ mascota: idDe(a.mascota), fechaAplicacion: a.fechaAplicacion, proximaDosis: a.proximaDosis }))
           : (item.mascota ? Array.from({ length: item.quantity || 1 }, () => ({ mascota: idDe(item.mascota) })) : [])
       })));
-      
-      // Asegurar que el cliente de la venta esté en el array de clientes
-      if (sale.customer && !customers.find(c => c._id === (sale.customer._id || sale.customer))) {
-        setCustomers(prev => [...prev, sale.customer._id ? sale.customer : { _id: sale.customer, name: 'Cliente' }]);
-      }
       
       setEditCustomer(sale.customer || null);
       setEditPet(sale.mascota?._id || sale.mascota || '');
@@ -2728,25 +2712,29 @@ const Sales = () => {
                     {/* Customer Selection */}
                     <div>
                       <label className="form-label">Cliente</label>
-                      <select
-                        value={editCustomer?._id || ''}
-                        onChange={async (e) => {
-                          const selectedCustomerObj = customers.find(c => c._id === e.target.value);
-                          setEditCustomer(selectedCustomerObj || null);
+                      <Autocomplete
+                        placeholder="Sin cliente (escribe para buscar)"
+                        fetchOptions={fetchCustomersForAutocomplete}
+                        displayValue={(item) => item ? `${item.name || ''}${item.phone ? ` - ${item.phone}` : ''}` : ''}
+                        getOptionValue={(item) => item._id}
+                        value={editCustomer}
+                        onChange={async (value) => {
                           setEditPet('');
-                          if (e.target.value) {
-                            await fetchPetsByCustomer(e.target.value);
+                          if (!value) {
+                            setEditCustomer(null);
+                            return;
+                          }
+                          try {
+                            const response = await customersAPI.getById(value);
+                            setEditCustomer(response.data.data);
+                            await fetchPetsByCustomer(value);
+                          } catch (error) {
+                            console.error('Error fetching customer:', error);
+                            setEditCustomer(null);
                           }
                         }}
-                        className="form-input"
-                      >
-                        <option value="">Sin cliente</option>
-                        {customers.map(customer => (
-                          <option key={customer._id} value={customer._id}>
-                            {customer.name}
-                          </option>
-                        ))}
-                      </select>
+                        minLength={1}
+                      />
                     </div>
 
                     {/* Pet Selection */}
