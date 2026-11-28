@@ -148,6 +148,8 @@ const Sales = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingSale, setEditingSale] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  // Texto que se manda al servidor: espera a que se deje de escribir para no pedir en cada tecla
+  const [busqueda, setBusqueda] = useState('');
   const [selectedDate, setSelectedDate] = useState(''); // Vacío por defecto para mostrar todas
   const [dateRange, setDateRange] = useState({
     startDate: '',
@@ -309,6 +311,7 @@ const Sales = () => {
         params.date = selectedDate;
       }
       if (selectedSeller) params.userId = selectedSeller;
+      if (busqueda) params.search = busqueda;
       const response = await salesAPI.getAll(params);
       setSales(response.data.data);
       setPagination(response.data.pagination || pagination);
@@ -317,7 +320,18 @@ const Sales = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedDate, dateRange, pagination.page, pagination.limit, selectedSeller]);
+  }, [selectedDate, dateRange, pagination.page, pagination.limit, selectedSeller, busqueda]);
+
+  // Al escribir en el buscador se busca en todas las páginas y se vuelve a la página 1
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const nueva = searchTerm.trim();
+      if (nueva === busqueda) return;
+      setBusqueda(nueva);
+      setPagination(p => ({ ...p, page: 1 }));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchTerm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchSales();
@@ -1522,19 +1536,8 @@ const Sales = () => {
     return NOMBRES_PAGO[metodos[0]] || etiqueta(metodos[0]);
   };
 
-  // Búsqueda por cliente, mascota, producto o nota. Antes, con el buscador vacío, las ventas sin
-  // cliente (de mostrador) no aparecían en la lista.
-  const textoBusqueda = searchTerm.trim().toLowerCase();
-  const filteredSales = sales.filter(sale => {
-    if (!textoBusqueda) return true;
-    const campos = [
-      sale.customer?.name,
-      sale.notes,
-      nombresMascotas(sale),
-      ...(sale.items || []).map(i => i.item?.name)
-    ];
-    return campos.some(c => c && c.toLowerCase().includes(textoBusqueda));
-  });
+  // La búsqueda (cliente, mascota, producto o nota) la hace el servidor sobre todas las páginas.
+  const filteredSales = sales;
 
   if (loading) {
     return <SkeletonTable rows={5} columns={8} />;

@@ -21,6 +21,12 @@ const { actualizarHistorialMedicoYCarnet } = require('../helpers/actualizarHisto
 const { prepararDosisVenta, sincronizarCarnetVenta } = require('../helpers/carnetVentaEditada');
 const router = express.Router();
 
+// Texto de búsqueda -> regex segura que ignora acentos (ricardo encuentra Ricardo; ramon encuentra Ramón)
+const regexSinAcentos = (texto) => texto
+  .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  .replace(/[aáàä]/gi, '[aáàä]').replace(/[eéèë]/gi, '[eéèë]').replace(/[iíìï]/gi, '[iíìï]')
+  .replace(/[oóòö]/gi, '[oóòö]').replace(/[uúùü]/gi, '[uúùü]').replace(/[nñ]/gi, '[nñ]');
+
 // true si ambas listas tienen los mismos artículos (tipo + id) con las mismas cantidades,
 // sin importar el orden. Precios y descuentos no cuentan: no mueven inventario.
 function mismosArticulos(actuales = [], nuevos = []) {
@@ -37,7 +43,7 @@ function mismosArticulos(actuales = [], nuevos = []) {
 // @desc    Obtener todas las ventas
 router.get('/', async (req, res) => {
   try {
-    const { date, startDate, endDate, customer, status, userId, page = 1, limit = 50 } = req.query;
+    const { date, startDate, endDate, customer, status, userId, search, page = 1, limit = 50 } = req.query;
     let query = {};
 
     // Filtro por fecha única (compatibilidad con existente)
@@ -91,6 +97,26 @@ router.get('/', async (req, res) => {
     if (customer) query.customer = customer;
     if (status) query.status = status;
     if (userId) query.user = userId;
+
+    // Búsqueda en TODAS las ventas que cumplen los filtros (antes se filtraba solo la página cargada):
+    // cliente (nombre o teléfono), mascota, producto/servicio o nota. Sin importar acentos ni mayúsculas.
+    const texto = typeof search === 'string' ? search.trim().slice(0, 60) : '';
+    if (texto) {
+      const rx = new RegExp(regexSinAcentos(texto), 'i');
+      const [clientes, mascotas, productos, servicios] = await Promise.all([
+        Cliente.find({ $or: [{ name: rx }, { phone: rx }] }).distinct('_id'),
+        Mascota.find({ name: rx }).distinct('_id'),
+        Producto.find({ name: rx }).distinct('_id'),
+        Servicio.find({ name: rx }).distinct('_id')
+      ]);
+      const articulos = [...productos, ...servicios];
+      query.$or = [
+        { notes: rx },
+        ...(clientes.length ? [{ customer: { $in: clientes } }] : []),
+        ...(mascotas.length ? [{ mascota: { $in: mascotas } }, { 'items.mascota': { $in: mascotas } }] : []),
+        ...(articulos.length ? [{ 'items.item': { $in: articulos } }] : [])
+      ];
+    }
 
     const ventas = await Venta.find(query)
       .populate('customer', 'name phone')
